@@ -198,74 +198,59 @@
     model.toFront();
   });
 
-  // ========== 左侧 Palette ========== //
-  const palette = document.createElement('div');
-  palette.style.position = 'fixed';
-  palette.style.left = '0';
-  palette.style.top = '0';
-  palette.style.width = '140px';
-  palette.style.height = '100%';
-  palette.style.background = '#f4f4f4';
-  palette.style.borderRight = '1px solid #ddd';
-  palette.style.zIndex = 10;
-  palette.style.boxShadow = '2px 0 5px rgba(0,0,0,0.1)';
-  palette.innerHTML = `
-    <div draggable="true" class="palette-item" data-type="start">开始</div>
-    <div draggable="true" class="palette-item" data-type="process">流程</div>
-    <div draggable="true" class="palette-item" data-type="decision">决策</div>
-    <div draggable="true" class="palette-item" data-type="switch">Switch</div>
-    <div draggable="true" class="palette-item" data-type="container">容器</div>
-    <div draggable="true" class="palette-item" data-type="end">结束</div>
-  `;
-  document.body.appendChild(palette);
+  // ========== 左侧面板拖放功能 ========== //
+  // 获取左侧面板元素
+  const sidebar = document.getElementById('sidebar');
+  const nodeTypes = sidebar.querySelectorAll('.node-type');
 
-  // Palette 样式
+  // 移除旧的palette元素（如果存在）
+  const oldPalette = document.querySelector('.palette-item');
+  if (oldPalette && oldPalette.parentElement) {
+    oldPalette.parentElement.remove();
+  }
+
+  // 为每个节点类型添加draggable属性
+  nodeTypes.forEach(nodeType => {
+    nodeType.setAttribute('draggable', 'true');
+  });
+
+  // 添加一些额外的样式
   const style = document.createElement('style');
   style.innerHTML = `
-.palette-item {
-  background: #fff;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  padding: 14px 8px;
-  margin: 16px 10px;
-  text-align: center;
-  cursor: grab;
-  user-select: none;
-  font-size: 18px;
-  font-weight: bold;
-  color: #333;
-  letter-spacing: 2px;
-  box-shadow: 0 1px 2px #eee;
-  transition: box-shadow 0.2s;
-}
-.palette-item:active {
-  cursor: grabbing;
-  box-shadow: 0 2px 8px #aaa;
-}
+    /* 拖拽时的样式 */
+    .node-type.dragging {
+      opacity: 0.5;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
 
-/* Make sure all elements are visible */
-.joint-element {
-  z-index: 1;
-}
+    /* 拖拽时的光标样式 */
+    .node-type:active {
+      cursor: grabbing;
+    }
 
-/* Ensure start and end nodes are always visible */
-.joint-element circle {
-  z-index: 2;
-}
+    /* 确保所有元素可见 */
+    .joint-element {
+      z-index: 1;
+    }
 
-/* Ensure text labels are visible */
-.joint-element text {
-  z-index: 3;
-}
+    /* 确保开始和结束节点始终可见 */
+    .joint-element circle {
+      z-index: 2;
+    }
 
-/* 平移模式样式 */
-.panning-cursor * {
-  cursor: grab !important;
-}
-.panning-cursor:active * {
-  cursor: grabbing !important;
-}
-`;
+    /* 确保文本标签可见 */
+    .joint-element text {
+      z-index: 3;
+    }
+
+    /* 平移模式样式 */
+    .panning-cursor * {
+      cursor: grab !important;
+    }
+    .panning-cursor:active * {
+      cursor: grabbing !important;
+    }
+  `;
   document.head.appendChild(style);
 
   // ========== 锚点分组配置 ========== //
@@ -345,22 +330,45 @@
 
   // ========== 拖拽创建节点 ========== //
   let dragType = null;
-  palette.addEventListener('dragstart', e => {
-    dragType = e.target.dataset.type;
-    // 设置拖拽数据，虽然这里不用，但标准HTML拖放需要
-    e.dataTransfer.setData('text/plain', dragType);
-    e.dataTransfer.effectAllowed = 'copy'; // 允许复制效果
+  let draggedElement = null;
+
+  // 为每个节点类型添加拖拽事件
+  nodeTypes.forEach(nodeType => {
+    // 拖拽开始
+    nodeType.addEventListener('dragstart', e => {
+      dragType = e.target.dataset.type;
+      draggedElement = e.target;
+
+      // 添加拖拽中的样式
+      e.target.classList.add('dragging');
+
+      // 设置拖拽数据
+      e.dataTransfer.setData('text/plain', dragType);
+      e.dataTransfer.effectAllowed = 'copy'; // 允许复制效果
+
+      // 使用默认拖拽图像，不需要自定义
+    });
+
+    // 拖拽结束
+    nodeType.addEventListener('dragend', e => {
+      e.target.classList.remove('dragging');
+      dragType = null;
+      draggedElement = null;
+    });
   });
+
+  // 画布上的拖拽事件
   paper.el.addEventListener('dragover', e => {
-    // 只有从palette拖拽时才允许默认的dragover行为（例如显示放置提示），否则阻止
+    // 只有从侧边栏拖拽时才允许放置
     if (dragType) {
-        e.preventDefault(); // 允许放置
-        e.dataTransfer.dropEffect = 'copy'; // 设置放置效果为复制
+      e.preventDefault(); // 允许放置
+      e.dataTransfer.dropEffect = 'copy'; // 设置放置效果为复制
     }
   });
+
   paper.el.addEventListener('drop', e => {
     e.preventDefault(); // 阻止默认行为，处理自定义放置逻辑
-    if (!dragType) return; // 如果不是从palette拖拽来的，不处理
+    if (!dragType) return; // 如果不是从侧边栏拖拽来的，不处理
 
     const { left, top } = paper.el.getBoundingClientRect();
     const x = e.clientX - left;
@@ -636,18 +644,16 @@
         }
     }
 
-    dragType = null; // 重置 dragType，拖拽结束
+    // 节点已添加，不需要显示任何成功提示
+
+    // 重置拖拽状态
+    dragType = null;
   });
 
-  // 当拖拽离开画布时，重置 dragType
+  // 当拖拽离开画布时的处理
   paper.el.addEventListener('dragleave', e => {
-    // 可以根据需要重置 dragType，或者在 drop/dragend 中重置
-    // 这里不在 dragleave 重置，避免拖拽经过子元素时误触
-  });
-
-  // 监听拖拽结束事件，在拖拽源上触发
-  palette.addEventListener('dragend', e => {
-    dragType = null; // 确保拖拽结束时重置
+    // 这里不重置dragType，避免拖拽经过子元素时误触发
+    // dragType会在drop或dragend事件中重置
   });
 
   // ========== 画布自适应和平移功能 ========== //
@@ -3142,3 +3148,183 @@
       }
     }
   });
+
+  // ========== 缩放控制功能 ========== //
+
+  // 缩放相关变量
+  let zoomLevel = 1; // 当前缩放比例
+  const MIN_SCALE = 0.3; // 最小缩放比例 (30%)
+  const MAX_SCALE = 2.0; // 最大缩放比例 (200%)
+  const SCALE_STEP = 0.1; // 缩放步长 (10%)
+
+  // 缩放控制元素
+  const zoomToolbar = document.getElementById('zoom-toolbar');
+  const zoomInBtn = document.getElementById('zoom-in');
+  const zoomOutBtn = document.getElementById('zoom-out');
+  const zoomPercentage = document.getElementById('zoom-percentage');
+  const toggleMinimapBtn = document.getElementById('toggle-minimap');
+  // 使用已经定义的minimapContainer变量，不再重复声明
+
+  // 从本地存储中获取小地图显示状态
+  const isMinimapVisible = localStorage.getItem('minimapVisible') !== 'false'; // 默认显示
+
+  // 初始化小地图显示状态
+  if (!isMinimapVisible) {
+    minimapContainer.style.display = 'none';
+    minimapContainer.style.opacity = '0';
+  } else {
+    minimapContainer.style.display = 'block';
+    minimapContainer.style.opacity = '0.7';
+  }
+
+  // 更新缩放百分比显示
+  function updateZoomPercentage() {
+    zoomPercentage.textContent = Math.round(zoomLevel * 100) + '%';
+  }
+
+  // 点击缩放百分比重置为100%
+  zoomPercentage.addEventListener('click', function() {
+    zoomPaper(1); // 重置为100%
+  });
+
+  // 执行缩放操作
+  function zoomPaper(newScale) {
+    // 限制缩放范围
+    newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+
+    if (newScale === zoomLevel) return; // 如果缩放比例没有变化，不执行操作
+
+    // 获取当前视口中心点
+    const clientRect = paper.el.getBoundingClientRect();
+    const centerX = clientRect.width / 2;
+    const centerY = clientRect.height / 2;
+
+    // 获取当前平移和缩放
+    const currentTranslate = paper.translate();
+    const oldScale = paper.scale().sx;
+
+    // 计算中心点在模型坐标系中的位置
+    const modelCenterX = (centerX - currentTranslate.tx) / oldScale;
+    const modelCenterY = (centerY - currentTranslate.ty) / oldScale;
+
+    // 计算新的平移值，保持视口中心点不变
+    const newTx = centerX - modelCenterX * newScale;
+    const newTy = centerY - modelCenterY * newScale;
+
+    // 应用新的缩放和平移
+    paper.scale(newScale, newScale);
+    paper.translate(newTx, newTy);
+
+    // 更新当前缩放比例
+    zoomLevel = newScale;
+
+    // 更新缩放百分比显示
+    updateZoomPercentage();
+
+    // 更新小地图视口
+    updateMinimapViewport();
+  }
+
+  // 放大按钮点击事件
+  zoomInBtn.addEventListener('click', function() {
+    zoomPaper(zoomLevel + SCALE_STEP);
+  });
+
+  // 缩小按钮点击事件
+  zoomOutBtn.addEventListener('click', function() {
+    zoomPaper(zoomLevel - SCALE_STEP);
+  });
+
+  // 切换小地图显示/隐藏
+  toggleMinimapBtn.addEventListener('click', function() {
+    // 获取当前显示状态
+    const isVisible = minimapContainer.style.display !== 'none';
+
+    // 切换显示状态
+    if (isVisible) {
+      // 淡出动画
+      minimapContainer.style.opacity = '0';
+      setTimeout(() => {
+        minimapContainer.style.display = 'none';
+      }, 300);
+    } else {
+      // 淡入动画
+      minimapContainer.style.display = 'block';
+      minimapContainer.style.opacity = '0';
+      setTimeout(() => {
+        minimapContainer.style.opacity = '0.7';
+      }, 10);
+    }
+
+    // 保存状态到本地存储
+    localStorage.setItem('minimapVisible', !isVisible);
+  });
+
+  // 键盘快捷键支持
+  document.addEventListener('keydown', function(evt) {
+    // 如果按下了Ctrl键
+    if (evt.ctrlKey || evt.metaKey) {
+      // Ctrl++ 放大
+      if (evt.key === '+' || evt.key === '=') {
+        evt.preventDefault(); // 阻止默认行为
+        zoomPaper(zoomLevel + SCALE_STEP);
+      }
+      // Ctrl+- 缩小
+      else if (evt.key === '-') {
+        evt.preventDefault(); // 阻止默认行为
+        zoomPaper(zoomLevel - SCALE_STEP);
+      }
+      // Ctrl+0 重置缩放
+      else if (evt.key === '0') {
+        evt.preventDefault(); // 阻止默认行为
+        zoomPaper(1); // 重置为100%
+      }
+      // Ctrl+M 切换小地图
+      else if (evt.key === 'm' || evt.key === 'M') {
+        evt.preventDefault(); // 阻止默认行为
+        toggleMinimapBtn.click(); // 触发小地图切换按钮的点击事件
+      }
+    }
+  });
+
+  // 鼠标滚轮缩放支持
+  paper.el.addEventListener('wheel', function(evt) {
+    // 如果按下了Ctrl键，执行缩放
+    if (evt.ctrlKey || evt.metaKey) {
+      evt.preventDefault(); // 阻止默认的滚动行为
+
+      // 根据滚轮方向确定缩放方向
+      const delta = evt.deltaY || evt.detail || evt.wheelDelta;
+
+      if (delta < 0) {
+        // 向上滚动，放大
+        zoomPaper(zoomLevel + SCALE_STEP);
+      } else {
+        // 向下滚动，缩小
+        zoomPaper(zoomLevel - SCALE_STEP);
+      }
+    }
+  }, { passive: false }); // passive: false 允许阻止默认行为
+
+  // 窗口大小变化时调整工具栏位置
+  window.addEventListener('resize', function() {
+    // 清除之前的定时器
+    clearTimeout(this.resizeToolbarTimeout);
+
+    // 设置新的定时器，延迟执行以防止频繁调用
+    this.resizeToolbarTimeout = setTimeout(function() {
+      // 根据窗口大小调整工具栏位置
+      const windowWidth = window.innerWidth;
+
+      if (windowWidth < 768) {
+        // 小屏幕上调整位置
+        zoomToolbar.style.right = '210px';
+      } else {
+        // 大屏幕上恢复默认位置
+        zoomToolbar.style.right = '250px';
+      }
+    }, 100);
+  });
+
+  // 初始化缩放百分比显示
+  updateZoomPercentage();
