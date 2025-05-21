@@ -1,0 +1,18 @@
+{
+  "name": "techmanworkflowfrontenddemo_cursor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "lite-server"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "jointjs": "^3.7.7",
+    "lite-server": "^2.6.1"
+  }
+}
