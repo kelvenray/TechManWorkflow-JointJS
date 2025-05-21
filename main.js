@@ -432,7 +432,7 @@
                 pointerEvents: 'auto'
             },
             label: {
-                text: '流程',
+                text: 'Grouping',
                 fill: '#fff',
                 fontWeight: 'bold',
                 fontSize: 18,
@@ -1316,11 +1316,44 @@
 
     .property-panel h3 {
       margin-top: 0;
-      margin-bottom: 15px;
+      margin-bottom: 0;
       color: #333;
       font-size: 18px;
+      position: relative;
+    }
+
+    .panel-header {
+      position: relative;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 15px;
       border-bottom: 1px solid #eee;
       padding-bottom: 10px;
+    }
+
+    .panel-header h3 {
+      margin-bottom: 0;
+      flex: 1;
+    }
+
+    .panel-close-icon {
+      width: 24px;
+      height: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      cursor: pointer;
+      color: #aaa;
+      font-size: 20px;
+      font-weight: normal;
+      transition: color 0.2s ease;
+      border-radius: 50%;
+      margin-left: 10px;
+    }
+
+    .panel-close-icon:hover {
+      color: #666;
     }
 
     .property-panel .form-group {
@@ -1382,6 +1415,49 @@
 
     .property-panel .cancel-btn:hover {
       background-color: #e0e0e0;
+    }
+
+    /* 选项卡样式 */
+    .tabs-container {
+      display: flex;
+      border-bottom: 1px solid #ddd;
+      margin-bottom: 20px;
+      margin-top: 5px;
+    }
+
+    .tab {
+      padding: 10px 15px;
+      cursor: pointer;
+      font-weight: 500;
+      color: #666;
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .tab:hover {
+      color: #2196f3;
+    }
+
+    .tab.active {
+      color: #2196f3;
+    }
+
+    .tab.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background-color: #2196f3;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
     }
 
     /* Switch 节点 Cases 容器样式 */
@@ -1765,12 +1841,31 @@
 
   // 移除调整句柄
   function removeResizeHandles() {
+    // 清理已知的调整句柄
     resizeHandles.forEach(handle => {
       if (handle.parentNode) {
         handle.parentNode.removeChild(handle);
       }
     });
     resizeHandles = [];
+
+    // 额外清理：查找并移除所有可能残留的调整句柄
+    const allResizeHandles = document.querySelectorAll('.resize-handle');
+    if (allResizeHandles.length > 0) {
+      console.log(`发现 ${allResizeHandles.length} 个残留的调整句柄，强制清理`);
+      allResizeHandles.forEach(handle => {
+        if (handle.parentNode) {
+          handle.parentNode.removeChild(handle);
+        }
+      });
+    }
+
+    // 重置调整大小相关的状态变量
+    resizingContainer = null;
+    resizeDirection = null;
+    initialSize = null;
+    initialPosition = null;
+    initialMousePosition = null;
   }
 
   // 这部分代码将被删除，因为我们会合并到下面的鼠标事件处理程序中
@@ -1805,12 +1900,21 @@
     iconElement.style.backgroundColor = 'black';
     iconElement.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
     iconElement.style.cursor = 'pointer';
-    iconElement.style.zIndex = '10000';
+    iconElement.style.zIndex = '20000'; // 提高z-index确保在最上层
     iconElement.style.display = 'flex';
     iconElement.style.justifyContent = 'center';
     iconElement.style.alignItems = 'center';
     iconElement.style.transition = 'transform 0.2s ease';
     iconElement.style.pointerEvents = 'auto'; // 确保图标可点击
+
+    // 为特定节点类型添加数据属性，用于识别
+    const nodeType = element.get('type');
+    const nodeLabel = element.attr('label/text');
+    if (nodeType === 'standard.Circle' && nodeLabel === '结束') {
+      iconElement.dataset.nodeType = 'end';
+    } else if (element.isContainer) {
+      iconElement.dataset.nodeType = 'container';
+    }
 
     // 添加X形状
     iconElement.innerHTML = `
@@ -1840,50 +1944,273 @@
       }
     };
 
-    // 添加点击事件
+    // 添加点击事件 - 改进版本，确保可靠的节点删除
     iconElement.onclick = function(evt) {
+      // 阻止事件冒泡和默认行为
       evt.stopPropagation();
-      if (hoveredElement) {
-        console.log('删除节点:', hoveredElement.id, hoveredElement.get('type'));
+      evt.preventDefault();
 
+      // 立即禁用图标，防止多次点击
+      this.style.pointerEvents = 'none';
+      this.style.opacity = '0.5';
+
+      // 保存当前悬停的节点引用，防止在删除过程中被修改
+      const elementToDelete = hoveredElement;
+
+      if (elementToDelete) {
+        console.log('删除节点:', elementToDelete.id, elementToDelete.get('type'));
+
+        // 立即清除所有图标，防止干扰
+        removeAllRelatedIcons();
+
+        // 立即清除悬停状态，防止状态混乱
+        hoveredElement = null;
+
+        // 确保移除resize句柄
+        removeResizeHandles();
+
+        // 隐藏属性面板
+        hidePropertyPanel();
+
+        // 检查节点类型，对特定类型使用增强的删除逻辑
+        const nodeType = elementToDelete.get('type');
+        const nodeLabel = elementToDelete.attr('label/text');
+        const isEndNode = nodeType === 'standard.Circle' && nodeLabel === '结束';
+        const isContainerNode = elementToDelete.isContainer;
+
+        // 使用增强的删除逻辑
+        deleteNodeWithFallback(elementToDelete, isEndNode, isContainerNode);
+      }
+    };
+
+    // 辅助函数：使用多层次的删除策略确保节点被删除
+    function deleteNodeWithFallback(node, isEndNode, isContainerNode) {
+      try {
+        // 对于容器节点，需要特殊处理
+        if (isContainerNode) {
+          deleteContainerNode(node);
+        }
+        // 对于结束节点，使用增强的删除逻辑
+        else if (isEndNode) {
+          deleteEndNode(node);
+        }
+        // 对于普通节点，直接删除
+        else {
+          node.remove();
+        }
+      } catch (error) {
+        console.error('删除节点时出错:', error);
+
+        // 备用方法1 - 使用graph API删除
         try {
-          // 如果是容器节点，需要特殊处理
-          if (hoveredElement.isContainer) {
-            // 获取容器中的所有嵌套节点
-            const embeddedCells = hoveredElement.getEmbeddedCells();
+          console.log('尝试使用备用方法1删除节点');
+          graph.removeCells([node]);
+        } catch (e) {
+          console.error('备用方法1失败:', e);
 
-            if (embeddedCells.length > 0) {
-              // 先解除所有嵌套关系
-              embeddedCells.forEach(cell => {
-                hoveredElement.unembed(cell);
-              });
-
-              // 然后删除容器节点
-              graph.removeCells([hoveredElement]);
-            } else {
-              // 如果没有嵌套节点，直接删除
-              graph.removeCells([hoveredElement]);
-            }
-          } else {
-            // 对于普通节点，直接删除
-            graph.removeCells([hoveredElement]);
-          }
-        } catch (error) {
-          console.error('删除节点时出错:', error);
-          // 备用方法
+          // 备用方法2 - 使用更底层的API
           try {
-            hoveredElement.remove();
-          } catch (e) {
-            console.error('备用删除方法也失败:', e);
+            console.log('尝试使用备用方法2删除节点');
+            if (node.collection) {
+              node.collection.remove(node);
+            }
+          } catch (e2) {
+            console.error('备用方法2也失败:', e2);
           }
         }
+      } finally {
+        // 无论成功与否，确保清理所有相关元素
+        setTimeout(() => {
+          removeAllRelatedIcons();
+          removeResizeHandles();
+        }, 100);
+      }
+    }
 
-        // 确保移除resize句柄和图标
+    // 辅助函数：专门处理容器节点的删除
+    function deleteContainerNode(containerNode) {
+      console.log(`容器节点 ${containerNode.id} 将被删除`);
+
+      // 获取容器中的所有嵌套节点
+      const embeddedCells = containerNode.getEmbeddedCells ? containerNode.getEmbeddedCells() : [];
+      console.log(`容器节点包含 ${embeddedCells.length} 个嵌套节点`);
+
+      // 先解除所有嵌套关系
+      if (embeddedCells.length > 0) {
+        embeddedCells.forEach(cell => {
+          try {
+            containerNode.unembed(cell);
+            console.log(`解除嵌套关系: ${cell.id}`);
+          } catch (e) {
+            console.warn(`解除嵌套关系失败: ${cell.id}`, e);
+          }
+        });
+      }
+
+      // 使用多种方法尝试删除容器节点
+      try {
+        // 方法1: 直接使用remove方法
+        containerNode.remove();
+        console.log('容器节点删除成功 (方法1)');
+      } catch (e1) {
+        console.warn('容器节点删除方法1失败:', e1);
+
+        try {
+          // 方法2: 使用graph API
+          graph.removeCells([containerNode]);
+          console.log('容器节点删除成功 (方法2)');
+        } catch (e2) {
+          console.warn('容器节点删除方法2失败:', e2);
+
+          // 方法3: 使用底层collection API
+          if (containerNode.collection) {
+            containerNode.collection.remove(containerNode);
+            console.log('容器节点删除成功 (方法3)');
+          } else {
+            throw new Error('无法删除容器节点');
+          }
+        }
+      }
+    }
+
+    // 辅助函数：专门处理结束节点的删除
+    function deleteEndNode(endNode) {
+      console.log(`结束节点 ${endNode.id} 将被删除`);
+
+      // 使用多种方法尝试删除结束节点
+      try {
+        // 方法1: 直接使用remove方法
+        endNode.remove();
+        console.log('结束节点删除成功 (方法1)');
+      } catch (e1) {
+        console.warn('结束节点删除方法1失败:', e1);
+
+        try {
+          // 方法2: 使用graph API
+          graph.removeCells([endNode]);
+          console.log('结束节点删除成功 (方法2)');
+        } catch (e2) {
+          console.warn('结束节点删除方法2失败:', e2);
+
+          // 方法3: 使用底层collection API
+          if (endNode.collection) {
+            endNode.collection.remove(endNode);
+            console.log('结束节点删除成功 (方法3)');
+          } else {
+            throw new Error('无法删除结束节点');
+          }
+        }
+      }
+
+      // 最后一次确保清理所有图标和句柄
+      setTimeout(() => {
+        removeAllRelatedIcons();
         removeResizeHandles();
+      }, 200);
+    }
+  }
+
+  // 创建删除图标的函数
+  function createNodeDeleteIcon(elementView) {
+    // 移除旧的图标（如果存在）
+    removeNodeDeleteIcon();
+
+    // 获取节点的位置和大小
+    const element = elementView.model;
+    const position = element.position();
+    const size = element.size();
+
+    // 创建一个DOM元素作为删除图标
+    const iconSize = 16;
+    const iconElement = document.createElement('div');
+    iconElement.className = 'node-delete-icon';
+    iconElement.style.position = 'fixed'; // 使用fixed定位，避免滚动问题
+    iconElement.style.width = `${iconSize}px`;
+    iconElement.style.height = `${iconSize}px`;
+    iconElement.style.borderRadius = '50%';
+    iconElement.style.backgroundColor = 'black';
+    iconElement.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+    iconElement.style.cursor = 'pointer';
+    iconElement.style.zIndex = '20000'; // 提高z-index确保在最上层
+    iconElement.style.display = 'flex';
+    iconElement.style.justifyContent = 'center';
+    iconElement.style.alignItems = 'center';
+    iconElement.style.transition = 'transform 0.2s ease';
+    iconElement.style.pointerEvents = 'auto'; // 确保图标可点击
+
+    // 为特定节点类型添加数据属性，用于识别
+    const nodeType = element.get('type');
+    const nodeLabel = element.attr('label/text');
+    if (nodeType === 'standard.Circle' && nodeLabel === '结束') {
+      iconElement.dataset.nodeType = 'end';
+    } else if (element.isContainer) {
+      iconElement.dataset.nodeType = 'container';
+    }
+
+    // 添加X形状
+    iconElement.innerHTML = `
+      <svg width="10" height="10" viewBox="0 0 10 10" style="overflow:visible;">
+        <path d="M2 2 L8 8 M2 8 L8 2" stroke="white" stroke-width="2"/>
+      </svg>
+    `;
+
+    // 添加悬停效果和鼠标状态跟踪
+    iconElement.onmouseover = function() {
+      this.style.transform = 'scale(1.2)';
+      this._isMouseOver = true; // 标记鼠标在图标上
+
+      // 清除任何现有的延迟隐藏定时器
+      if (hideIconTimeout) {
+        clearTimeout(hideIconTimeout);
+        hideIconTimeout = null;
+      }
+    };
+    iconElement.onmouseout = function() {
+      this.style.transform = 'scale(1)';
+      this._isMouseOver = false; // 标记鼠标不在图标上
+
+      // 如果鼠标不在节点上，延迟隐藏图标
+      if (!hoveredElement) {
+        delayHideNodeDeleteIcon();
+      }
+    };
+
+    // 添加点击事件 - 改进版本，确保可靠的节点删除
+    iconElement.onclick = function(evt) {
+      // 阻止事件冒泡和默认行为
+      evt.stopPropagation();
+      evt.preventDefault();
+
+      // 立即禁用图标，防止多次点击
+      this.style.pointerEvents = 'none';
+      this.style.opacity = '0.5';
+
+      // 保存当前悬停的节点引用，防止在删除过程中被修改
+      const elementToDelete = hoveredElement;
+
+      if (elementToDelete) {
+        console.log('删除节点:', elementToDelete.id, elementToDelete.get('type'));
+
+        // 立即清除所有图标，防止干扰
+        removeAllRelatedIcons();
+
+        // 立即清除悬停状态，防止状态混乱
         hoveredElement = null;
-        removeNodeDeleteIcon();
-        removeNodePropertyIcon();
+
+        // 确保移除resize句柄
+        removeResizeHandles();
+
+        // 隐藏属性面板
         hidePropertyPanel();
+
+        // 检查节点类型，对特定类型使用增强的删除逻辑
+        const nodeType = elementToDelete.get('type');
+        const nodeLabel = elementToDelete.attr('label/text');
+        const isEndNode = nodeType === 'standard.Circle' && nodeLabel === '结束';
+        const isContainerNode = elementToDelete.isContainer;
+
+        // 使用增强的删除逻辑
+        deleteNodeWithFallback(elementToDelete, isEndNode, isContainerNode);
       }
     };
 
@@ -1894,9 +2221,9 @@
     let iconX, iconY;
 
     // 检查节点类型，为不同形状的节点调整位置
-    const nodeType = element.get('type');
+    const elementType = element.get('type');
 
-    if (nodeType === 'standard.Polygon') {
+    if (elementType === 'standard.Polygon') {
       // 对于菱形节点（决策节点），调整位置
       iconX = position.x + size.width * 0.7; // 向左移动，更靠近节点中心
       iconY = position.y + size.height * 0.3; // 向下移动，更靠近节点中心
@@ -1923,6 +2250,96 @@
     nodeDeleteIcon = iconElement;
 
     return nodeDeleteIcon;
+  }
+
+  // 辅助函数：使用多层次的删除策略确保节点被删除
+  function deleteNodeWithFallback(node, isEndNode, isContainerNode) {
+    try {
+      // 对于容器节点，需要特殊处理
+      if (isContainerNode) {
+        deleteContainerNode(node);
+      }
+      // 对于结束节点，使用增强的删除逻辑
+      else if (isEndNode) {
+        deleteEndNode(node);
+      }
+      // 对于普通节点，直接删除
+      else {
+        node.remove();
+      }
+    } catch (error) {
+      console.error('删除节点时出错:', error);
+
+      // 备用方法1 - 使用graph API删除
+      try {
+        console.log('尝试使用备用方法1删除节点');
+        graph.removeCells([node]);
+      } catch (e) {
+        console.error('备用方法1失败:', e);
+
+        // 备用方法2 - 使用更底层的API
+        try {
+          console.log('尝试使用备用方法2删除节点');
+          if (node.collection) {
+            node.collection.remove(node);
+          }
+        } catch (e2) {
+          console.error('备用方法2也失败:', e2);
+        }
+      }
+    } finally {
+      // 无论成功与否，确保清理所有相关元素
+      setTimeout(() => {
+        removeAllRelatedIcons();
+        removeResizeHandles();
+      }, 100);
+    }
+  }
+
+  // 辅助函数：专门处理容器节点的删除
+  function deleteContainerNode(containerNode) {
+    console.log(`容器节点 ${containerNode.id} 将被删除`);
+
+    // 获取容器中的所有嵌套节点
+    const embeddedCells = containerNode.getEmbeddedCells ? containerNode.getEmbeddedCells() : [];
+    console.log(`容器节点包含 ${embeddedCells.length} 个嵌套节点`);
+
+    // 先解除所有嵌套关系
+    if (embeddedCells.length > 0) {
+      embeddedCells.forEach(cell => {
+        try {
+          containerNode.unembed(cell);
+          console.log(`解除嵌套关系: ${cell.id}`);
+        } catch (e) {
+          console.warn(`解除嵌套关系失败: ${cell.id}`, e);
+        }
+      });
+    }
+
+    // 使用多种方法尝试删除容器节点
+    try {
+      // 方法1: 直接使用remove方法
+      containerNode.remove();
+      console.log('容器节点删除成功 (方法1)');
+    } catch (e1) {
+      console.warn('容器节点删除方法1失败:', e1);
+
+      try {
+        // 方法2: 使用graph API
+        graph.removeCells([containerNode]);
+        console.log('容器节点删除成功 (方法2)');
+      } catch (e2) {
+        console.warn('容器节点删除方法2失败:', e2);
+
+        // 方法3: 使用底层collection API
+        if (containerNode.collection) {
+          containerNode.collection.remove(containerNode);
+          console.log('容器节点删除成功 (方法3)');
+        } else {
+          throw new Error('无法删除容器节点');
+        }
+      }
+    }
   }
 
   // 移除删除图标的函数
@@ -2066,23 +2483,156 @@
     }
   }
 
-  // 延迟隐藏图标的函数
+  // 移除所有与节点相关的图标（包括嵌套节点的图标）- 增强版本
+  function removeAllRelatedIcons(node) {
+    // 清除任何现有的延迟隐藏定时器
+    if (hideIconTimeout) {
+      clearTimeout(hideIconTimeout);
+      hideIconTimeout = null;
+    }
+
+    // 重置图标引用变量
+    nodeDeleteIcon = null;
+    nodePropertyIcon = null;
+
+    // 使用更可靠的方法移除所有图标
+    function removeAllIconElements() {
+      // 查找所有图标元素
+      const allIcons = document.querySelectorAll('.node-delete-icon, .node-property-icon');
+
+      // 如果找到图标，记录并移除它们
+      if (allIcons.length > 0) {
+        console.log(`移除 ${allIcons.length} 个图标元素`);
+        allIcons.forEach(icon => {
+          try {
+            if (icon.parentNode) {
+              // 禁用事件处理，防止在删除过程中触发事件
+              icon.style.pointerEvents = 'none';
+              icon.parentNode.removeChild(icon);
+            }
+          } catch (e) {
+            console.warn('移除图标元素失败:', e);
+          }
+        });
+        return true;
+      }
+      return false;
+    }
+
+    // 立即执行一次清理
+    removeAllIconElements();
+
+    // 如果提供了容器节点，确保其嵌套节点的图标也被移除
+    if (node && node.isContainer) {
+      try {
+        const embeddedCells = node.getEmbeddedCells ? node.getEmbeddedCells() : [];
+        if (embeddedCells && embeddedCells.length > 0) {
+          console.log(`容器节点 ${node.id} 包含 ${embeddedCells.length} 个嵌套节点，清理它们的图标`);
+        }
+      } catch (e) {
+        console.warn('获取嵌套节点失败:', e);
+      }
+    }
+
+    // 特殊处理：如果是结束节点，记录日志
+    if (node) {
+      try {
+        const nodeType = node.get('type');
+        const nodeLabel = node.attr('label/text');
+
+        if (nodeType === 'standard.Circle' && nodeLabel === '结束') {
+          console.log(`清理结束节点 ${node.id} 的图标`);
+        }
+        // 特殊处理：如果是Grouping节点或Decision节点，记录日志
+        else if (nodeType === 'standard.Rectangle' && !node.isContainer && !node.isSwitch) {
+          console.log(`清理Grouping节点 ${node.id} 的图标`);
+        } else if (nodeType === 'standard.Polygon') {
+          console.log(`清理Decision节点 ${node.id} 的图标`);
+        }
+      } catch (e) {
+        console.warn('获取节点类型失败:', e);
+      }
+    }
+
+    // 使用多次延迟清理，确保所有图标都被移除
+    // 第一次延迟清理
+    setTimeout(() => {
+      removeAllIconElements();
+
+      // 第二次延迟清理，确保彻底
+      setTimeout(() => {
+        if (removeAllIconElements()) {
+          // 如果第二次清理还发现图标，进行第三次清理
+          setTimeout(removeAllIconElements, 50);
+        }
+      }, 50);
+    }, 10);
+  }
+
+  // 延迟隐藏图标的函数 - 改进版本
   function delayHideIcons() {
     // 清除任何现有的延迟隐藏定时器
     if (hideIconTimeout) {
       clearTimeout(hideIconTimeout);
+      hideIconTimeout = null;
     }
 
     // 设置新的延迟隐藏定时器
     hideIconTimeout = setTimeout(function() {
       // 检查鼠标是否在图标上
-      if ((nodeDeleteIcon && nodeDeleteIcon._isMouseOver) ||
-          (nodePropertyIcon && nodePropertyIcon._isMouseOver)) {
+      const deleteIconHovered = nodeDeleteIcon && nodeDeleteIcon._isMouseOver;
+      const propertyIconHovered = nodePropertyIcon && nodePropertyIcon._isMouseOver;
+
+      if (deleteIconHovered || propertyIconHovered) {
+        console.log('图标仍在鼠标悬停状态，不隐藏');
         return; // 如果鼠标在任一图标上，不隐藏
       }
 
+      // 检查是否仍有悬停的节点
+      if (hoveredElement) {
+        // 如果仍有悬停的节点，不隐藏图标
+        console.log('节点仍在悬停状态，不隐藏图标');
+        return;
+      }
+
+      // 安全地移除图标
+      if (nodeDeleteIcon) {
+        console.log('延迟隐藏删除图标');
+        removeNodeDeleteIcon();
+      }
+
+      if (nodePropertyIcon) {
+        console.log('延迟隐藏属性图标');
+        removeNodePropertyIcon();
+      }
+
+      hideIconTimeout = null;
+    }, 300); // 300毫秒延迟
+  }
+
+  // 专门用于删除图标的延迟隐藏函数
+  function delayHideNodeDeleteIcon() {
+    // 清除任何现有的延迟隐藏定时器
+    if (hideIconTimeout) {
+      clearTimeout(hideIconTimeout);
+      hideIconTimeout = null;
+    }
+
+    // 设置新的延迟隐藏定时器
+    hideIconTimeout = setTimeout(function() {
+      // 检查鼠标是否在删除图标上
+      if (nodeDeleteIcon && nodeDeleteIcon._isMouseOver) {
+        return; // 如果鼠标在删除图标上，不隐藏
+      }
+
+      // 检查是否仍有悬停的节点
+      if (hoveredElement) {
+        // 如果仍有悬停的节点，不隐藏图标
+        return;
+      }
+
+      // 安全地移除删除图标
       removeNodeDeleteIcon();
-      removeNodePropertyIcon();
       hideIconTimeout = null;
     }, 300); // 300毫秒延迟
   }
@@ -2144,29 +2694,20 @@
     // 获取节点已有的属性数据
     const properties = element.prop('properties') || {};
 
-    let panelContent = '';
     let panelTitle = '';
+    let commonContent = '';
+    let propertiesContent = '';
+    let useTabs = true; // 默认使用选项卡
 
-    if (nodeType === 'standard.Circle' && nodeLabel === '开始') {
-      // 开始节点属性
-      panelTitle = '开始节点属性';
-      panelContent = `
+    // 为不同类型的节点生成内容
+    if (nodeType === 'standard.Circle' && (nodeLabel === '开始' || nodeLabel === '结束')) {
+      // 开始/结束节点属性 - 不使用选项卡
+      useTabs = false;
+      panelTitle = nodeLabel === '开始' ? '开始节点属性' : '结束节点属性';
+      commonContent = `
         <div class="form-group">
           <label for="node-name">节点名称</label>
-          <input type="text" id="node-name" value="${properties.name || '开始'}" />
-        </div>
-        <div class="form-group">
-          <label for="node-description">描述</label>
-          <textarea id="node-description">${properties.description || ''}</textarea>
-        </div>
-      `;
-    } else if (nodeType === 'standard.Circle' && nodeLabel === '结束') {
-      // 结束节点属性
-      panelTitle = '结束节点属性';
-      panelContent = `
-        <div class="form-group">
-          <label for="node-name">节点名称</label>
-          <input type="text" id="node-name" value="${properties.name || '结束'}" />
+          <input type="text" id="node-name" value="${properties.name || nodeLabel}" />
         </div>
         <div class="form-group">
           <label for="node-description">描述</label>
@@ -2174,30 +2715,46 @@
         </div>
       `;
     } else if (nodeType === 'standard.Rectangle' && !element.isContainer && !element.isSwitch) {
-      // 流程节点属性
-      panelTitle = '流程节点属性';
-      panelContent = `
+      // Grouping节点属性
+      panelTitle = 'Grouping节点属性';
+
+      // 通用选项卡内容
+      commonContent = `
         <div class="form-group">
           <label for="node-name">节点名称</label>
-          <input type="text" id="node-name" value="${properties.name || '流程'}" />
+          <input type="text" id="node-name" value="${properties.name || 'Grouping'}" />
         </div>
         <div class="form-group">
           <label for="node-description">描述</label>
           <textarea id="node-description">${properties.description || ''}</textarea>
         </div>
+      `;
+
+      // 属性选项卡内容
+      propertiesContent = `
         <div class="form-group">
-          <label for="node-action">执行动作</label>
-          <input type="text" id="node-action" value="${properties.action || ''}" />
+          <label for="node-field">Field</label>
+          <input type="text" id="node-field" value="${properties.field || ''}" />
         </div>
         <div class="form-group">
-          <label for="node-duration">预计耗时（分钟）</label>
-          <input type="number" id="node-duration" value="${properties.duration || '0'}" min="0" />
+          <label for="node-field-value">Field Value</label>
+          <input type="text" id="node-field-value" value="${properties.fieldValue || ''}" />
+        </div>
+        <div class="form-group">
+          <label for="node-wrapper-fields">Wrapper Fields</label>
+          <input type="text" id="node-wrapper-fields" value="${properties.wrapperFields || ''}" />
+        </div>
+        <div class="form-group">
+          <label for="node-category-value">Category Value</label>
+          <input type="text" id="node-category-value" value="${properties.categoryValue || ''}" />
         </div>
       `;
     } else if (nodeType === 'standard.Polygon') {
       // 决策节点属性
       panelTitle = '决策节点属性';
-      panelContent = `
+
+      // 通用选项卡内容
+      commonContent = `
         <div class="form-group">
           <label for="node-name">节点名称</label>
           <input type="text" id="node-name" value="${properties.name || '决策'}" />
@@ -2206,6 +2763,10 @@
           <label for="node-description">描述</label>
           <textarea id="node-description">${properties.description || ''}</textarea>
         </div>
+      `;
+
+      // 属性选项卡内容
+      propertiesContent = `
         <div class="form-group">
           <label for="node-condition">决策条件</label>
           <textarea id="node-condition">${properties.condition || ''}</textarea>
@@ -2221,8 +2782,8 @@
         { name: 'Case 2', expression: '' }
       ];
 
-      // 生成基本属性表单
-      panelContent = `
+      // 通用选项卡内容
+      commonContent = `
         <div class="form-group">
           <label for="node-name">节点名称</label>
           <input type="text" id="node-name" value="${properties.name || 'Switch'}" />
@@ -2231,7 +2792,11 @@
           <label for="node-description">描述</label>
           <textarea id="node-description">${properties.description || '评估多个条件并根据结果继续执行'}</textarea>
         </div>
-        <h4 style="margin-top: 20px; border-bottom: 1px solid #eee; padding-bottom: 8px;">Cases</h4>
+      `;
+
+      // 属性选项卡内容 - Cases
+      propertiesContent = `
+        <h4 style="margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 8px;">Cases</h4>
         <div id="cases-container" style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
       `;
 
@@ -2240,7 +2805,7 @@
         // 检查是否为 Default case
         const isDefault = caseItem.isDefault === true;
 
-        panelContent += `
+        propertiesContent += `
           <div class="case-item" data-index="${index}" ${isDefault ? 'data-default="true"' : ''}>
             <div style="display: flex; margin-bottom: 10px; align-items: center;">
               <div style="flex: 1;">
@@ -2268,7 +2833,7 @@
       });
 
       // 添加 "添加 Case" 按钮
-      panelContent += `
+      propertiesContent += `
         </div>
         <button type="button" id="add-case-btn" style="background: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 16px; margin-top: 10px; cursor: pointer; display: flex; align-items: center;">
           <span style="font-size: 18px; margin-right: 5px;">+</span> 添加 Case
@@ -2277,7 +2842,9 @@
     } else if (element.isContainer) {
       // 容器节点属性
       panelTitle = '容器节点属性';
-      panelContent = `
+
+      // 通用选项卡内容
+      commonContent = `
         <div class="form-group">
           <label for="node-name">容器名称</label>
           <input type="text" id="node-name" value="${properties.name || '容器'}" />
@@ -2286,6 +2853,10 @@
           <label for="node-description">描述</label>
           <textarea id="node-description">${properties.description || ''}</textarea>
         </div>
+      `;
+
+      // 属性选项卡内容
+      propertiesContent = `
         <div class="form-group">
           <label for="node-category">分类</label>
           <input type="text" id="node-category" value="${properties.category || ''}" />
@@ -2293,23 +2864,73 @@
       `;
     }
 
-    // 添加按钮
-    panelContent += `
-      <div class="button-group">
-        <button class="cancel-btn" id="property-cancel">取消</button>
-        <button class="save-btn" id="property-save">保存</button>
-      </div>
-    `;
+    // 构建面板内容
+    let panelContent = '';
+
+    if (useTabs) {
+      // 使用选项卡的面板内容
+      panelContent = `
+        <div class="tabs-container">
+          <div class="tab active" data-tab="common">Common</div>
+          <div class="tab" data-tab="properties">Properties</div>
+        </div>
+        <div class="tab-content active" id="tab-common">
+          ${commonContent}
+        </div>
+        <div class="tab-content" id="tab-properties">
+          ${propertiesContent}
+        </div>
+        <div class="button-group">
+          <button class="cancel-btn" id="property-cancel">取消</button>
+          <button class="save-btn" id="property-save">保存</button>
+        </div>
+      `;
+    } else {
+      // 不使用选项卡的面板内容（开始/结束节点）
+      panelContent = `
+        ${commonContent}
+        <div class="button-group">
+          <button class="cancel-btn" id="property-cancel">取消</button>
+          <button class="save-btn" id="property-save">保存</button>
+        </div>
+      `;
+    }
 
     // 设置面板内容
-    panel.innerHTML = `<h3>${panelTitle}</h3>${panelContent}`;
+    panel.innerHTML = `
+      <div class="panel-header">
+        <h3>${panelTitle}</h3>
+        <div class="panel-close-icon">&times;</div>
+      </div>
+      ${panelContent}
+    `;
 
     // 显示面板
     panel.style.display = 'block';
 
+    // 添加选项卡切换功能
+    if (useTabs) {
+      const tabs = panel.querySelectorAll('.tab');
+      const tabContents = panel.querySelectorAll('.tab-content');
+
+      tabs.forEach(tab => {
+        tab.addEventListener('click', function() {
+          // 移除所有选项卡的活动状态
+          tabs.forEach(t => t.classList.remove('active'));
+          tabContents.forEach(c => c.classList.remove('active'));
+
+          // 添加当前选项卡的活动状态
+          this.classList.add('active');
+          const tabId = this.getAttribute('data-tab');
+          document.getElementById(`tab-${tabId}`).classList.add('active');
+        });
+      });
+    }
+
     // 添加按钮事件
     const saveBtn = document.getElementById('property-save');
     const cancelBtn = document.getElementById('property-cancel');
+    const closeIcon = panel.querySelector('.panel-close-icon');
 
     // 移除旧的事件监听器（如果存在）
     if (saveBtn) {
@@ -2322,6 +2943,11 @@
       const newCancelBtn = cancelBtn.cloneNode(true);
       cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
       newCancelBtn.addEventListener('click', hidePropertyPanel);
+    }
+
+    // 添加关闭图标事件
+    if (closeIcon) {
+      closeIcon.addEventListener('click', hidePropertyPanel);
     }
 
     // 如果是 Switch 节点，添加 Case 相关事件
@@ -2417,9 +3043,11 @@
 
     // 根据节点类型获取特定属性
     if (nodeType === 'standard.Rectangle' && !currentEditingNode.isContainer && !currentEditingNode.isSwitch) {
-      // 流程节点特有属性
-      properties.action = document.getElementById('node-action').value;
-      properties.duration = document.getElementById('node-duration').value;
+      // Grouping节点特有属性
+      properties.field = document.getElementById('node-field').value;
+      properties.fieldValue = document.getElementById('node-field-value').value;
+      properties.wrapperFields = document.getElementById('node-wrapper-fields').value;
+      properties.categoryValue = document.getElementById('node-category-value').value;
     } else if (nodeType === 'standard.Polygon') {
       // 决策节点特有属性
       properties.condition = document.getElementById('node-condition').value;
@@ -2544,14 +3172,34 @@
     }, 100);
   }
 
-  // 鼠标进入节点时显示删除图标、属性图标和调整句柄
+  // 鼠标进入节点时显示删除图标、属性图标和调整句柄 - 改进版本
   paper.on('element:mouseover', function(elementView, evt) {
+    // 清除任何现有的延迟隐藏定时器
+    if (hideIconTimeout) {
+      clearTimeout(hideIconTimeout);
+      hideIconTimeout = null;
+    }
+
     const element = elementView.model;
+
+    // 检查节点是否有效
+    if (!element || !element.id) {
+      console.warn('无效的节点元素');
+      return;
+    }
+
+    // 如果已经有悬停的节点，先清理它的图标
+    if (hoveredElement && hoveredElement !== element) {
+      // 移除旧节点的图标，但不重置hoveredElement
+      removeNodeDeleteIcon();
+      removeNodePropertyIcon();
+    }
 
     // 保存当前悬停的节点
     hoveredElement = element;
+    console.log('鼠标悬停在节点上:', element.id, element.get('type'));
 
-    // 创建并显示删除图标
+    // 创建并显示删除图标（对所有节点类型都显示，包括开始和结束节点）
     createNodeDeleteIcon(elementView);
 
     // 创建并显示属性图标（对于开始和结束节点不显示）
@@ -2798,46 +3446,124 @@
     }
 
     if ((evt.key === 'Delete' || evt.key === 'Backspace') && hoveredElement) {
-      console.log('键盘删除节点:', hoveredElement.id, hoveredElement.get('type'));
+      // 保存当前悬停的节点引用，防止在删除过程中被修改
+      const elementToDelete = hoveredElement;
 
+      console.log('键盘删除节点:', elementToDelete.id, elementToDelete.get('type'));
+
+      // 立即清除所有图标，防止干扰
+      removeAllRelatedIcons();
+
+      // 立即清除悬停状态，防止状态混乱
+      hoveredElement = null;
+
+      // 确保移除resize句柄
+      removeResizeHandles();
+
+      // 隐藏属性面板
+      hidePropertyPanel();
+
+      // 检查节点类型，对特定类型使用增强的删除逻辑
+      const nodeType = elementToDelete.get('type');
+      const nodeLabel = elementToDelete.attr('label/text');
+      const isEndNode = nodeType === 'standard.Circle' && nodeLabel === '结束';
+      const isContainerNode = elementToDelete.isContainer;
+
+      // 使用与删除图标点击相同的增强删除逻辑
       try {
-        // 如果是容器节点，需要特殊处理
-        if (hoveredElement.isContainer) {
+        // 对于容器节点，需要特殊处理
+        if (isContainerNode) {
           // 获取容器中的所有嵌套节点
-          const embeddedCells = hoveredElement.getEmbeddedCells();
+          const embeddedCells = elementToDelete.getEmbeddedCells();
+          console.log(`键盘删除：容器节点 ${elementToDelete.id} 将被删除，包含 ${embeddedCells.length} 个嵌套节点`);
 
+          // 先解除所有嵌套关系
           if (embeddedCells.length > 0) {
-            // 先解除所有嵌套关系
             embeddedCells.forEach(cell => {
-              hoveredElement.unembed(cell);
+              try {
+                elementToDelete.unembed(cell);
+                console.log(`解除嵌套关系: ${cell.id}`);
+              } catch (e) {
+                console.warn(`解除嵌套关系失败: ${cell.id}`, e);
+              }
             });
-
-            // 然后删除容器节点
-            graph.removeCells([hoveredElement]);
-          } else {
-            // 如果没有嵌套节点，直接删除
-            graph.removeCells([hoveredElement]);
           }
-        } else {
-          // 对于普通节点，直接删除
-          graph.removeCells([hoveredElement]);
+
+          // 使用多种方法尝试删除容器节点
+          try {
+            // 方法1: 直接使用remove方法
+            elementToDelete.remove();
+            console.log('容器节点删除成功 (方法1)');
+          } catch (e1) {
+            console.warn('容器节点删除方法1失败:', e1);
+
+            try {
+              // 方法2: 使用graph API
+              graph.removeCells([elementToDelete]);
+              console.log('容器节点删除成功 (方法2)');
+            } catch (e2) {
+              console.warn('容器节点删除方法2失败:', e2);
+
+              // 方法3: 使用底层collection API
+              if (elementToDelete.collection) {
+                elementToDelete.collection.remove(elementToDelete);
+                console.log('容器节点删除成功 (方法3)');
+              } else {
+                throw new Error('无法删除容器节点');
+              }
+            }
+          }
+        }
+        // 对于结束节点，使用增强的删除逻辑
+        else if (isEndNode) {
+          console.log(`键盘删除：结束节点 ${elementToDelete.id} 将被删除`);
+
+          // 使用多种方法尝试删除结束节点
+          try {
+            // 方法1: 直接使用remove方法
+            elementToDelete.remove();
+            console.log('结束节点删除成功 (方法1)');
+          } catch (e1) {
+            console.warn('结束节点删除方法1失败:', e1);
+
+            try {
+              // 方法2: 使用graph API
+              graph.removeCells([elementToDelete]);
+              console.log('结束节点删除成功 (方法2)');
+            } catch (e2) {
+              console.warn('结束节点删除方法2失败:', e2);
+
+              // 方法3: 使用底层collection API
+              if (elementToDelete.collection) {
+                elementToDelete.collection.remove(elementToDelete);
+                console.log('结束节点删除成功 (方法3)');
+              } else {
+                throw new Error('无法删除结束节点');
+              }
+            }
+          }
+        }
+        // 对于普通节点，直接删除
+        else {
+          elementToDelete.remove();
         }
       } catch (error) {
         console.error('键盘删除节点时出错:', error);
-        // 备用方法
+
+        // 备用方法 - 简化的删除逻辑
         try {
-          hoveredElement.remove();
+          console.log('尝试使用备用方法删除节点');
+          graph.removeCells([elementToDelete]);
         } catch (e) {
-          console.error('键盘删除备用方法也失败:', e);
+          console.error('键盘备用删除方法也失败:', e);
         }
       }
 
-      // 确保移除resize句柄和图标
-      removeResizeHandles();
-      hoveredElement = null;
-      removeNodeDeleteIcon();
-      removeNodePropertyIcon();
-      hidePropertyPanel();
+      // 最后一次确保清理所有图标和句柄
+      setTimeout(() => {
+        removeAllRelatedIcons();
+        removeResizeHandles();
+      }, 200);
     }
   });
 
@@ -3073,24 +3799,124 @@
     }
   });
 
-  // 监听节点删除事件，确保清理resize句柄和图标
+  // 监听节点删除事件，确保清理resize句柄和图标 - 增强版本
   graph.on('remove', function(cell) {
-    // 如果删除的是容器节点，确保移除resize句柄
-    if (cell.isContainer && cell.isResizable) {
-      // 移除resize句柄
-      removeResizeHandles();
-    }
+    try {
+      console.log(`节点被删除: ${cell.id}, 类型: ${cell.get('type')}`);
 
-    // 如果删除的是当前悬停的节点，清除引用并移除图标
-    if (hoveredElement === cell) {
-      hoveredElement = null;
-      removeNodeDeleteIcon();
-      removeNodePropertyIcon();
-    }
+      // 立即清除悬停状态，防止状态混乱
+      if (hoveredElement === cell) {
+        hoveredElement = null;
+      }
 
-    // 如果删除的是当前正在编辑属性的节点，隐藏属性面板
-    if (currentEditingNode === cell) {
-      hidePropertyPanel();
+      // 对所有节点类型进行处理，确保清理所有相关元素
+      let nodeType, nodeLabel;
+      try {
+        nodeType = cell.get('type');
+        nodeLabel = cell.attr('label/text');
+      } catch (e) {
+        console.warn('获取节点类型或标签失败:', e);
+        nodeType = 'unknown';
+        nodeLabel = '';
+      }
+
+      // 如果删除的是容器节点，确保移除resize句柄和所有相关图标
+      if (cell.isContainer) {
+        try {
+          // 获取容器中的所有嵌套节点（在删除前）
+          const embeddedCells = cell.getEmbeddedCells ? cell.getEmbeddedCells() : [];
+
+          // 记录嵌套节点的ID，用于后续清理
+          const embeddedIds = embeddedCells.map(embedded => embedded.id);
+
+          console.log(`容器节点 ${cell.id} 被删除，包含 ${embeddedCells.length} 个嵌套节点`);
+        } catch (e) {
+          console.warn('获取嵌套节点失败:', e);
+        }
+
+        // 移除resize句柄
+        removeResizeHandles();
+      }
+      // 如果是结束节点，特殊处理
+      else if (nodeType === 'standard.Circle' && nodeLabel === '结束') {
+        console.log(`结束节点被删除: ${cell.id}`);
+      }
+      // 如果是Grouping节点或Decision节点，特殊处理
+      else if ((nodeType === 'standard.Rectangle' && !cell.isContainer && !cell.isSwitch) ||
+               nodeType === 'standard.Polygon') {
+        console.log(`特殊节点被删除: ${cell.id}, 类型: ${nodeType}`);
+      }
+
+      // 确保所有相关图标都被移除
+      removeAllRelatedIcons();
+
+      // 多次延迟执行，确保所有图标和句柄都被彻底清理
+      const cleanupIntervals = [50, 150, 300];
+      cleanupIntervals.forEach(delay => {
+        setTimeout(() => {
+          // 再次移除所有图标和句柄
+          removeAllRelatedIcons();
+          removeResizeHandles();
+
+          // 确保没有残留的图标
+          const allIcons = document.querySelectorAll('.node-delete-icon, .node-property-icon');
+          if (allIcons.length > 0) {
+            console.log(`删除节点后 ${delay}ms 仍有 ${allIcons.length} 个图标残留，强制清理`);
+            allIcons.forEach(icon => {
+              try {
+                if (icon.parentNode) {
+                  // 禁用事件处理，防止在删除过程中触发事件
+                  icon.style.pointerEvents = 'none';
+                  icon.parentNode.removeChild(icon);
+                }
+              } catch (e) {
+                console.warn('移除残留图标失败:', e);
+              }
+            });
+          }
+
+          // 确保没有残留的resize句柄
+          const allHandles = document.querySelectorAll('.resize-handle');
+          if (allHandles.length > 0) {
+            console.log(`删除节点后 ${delay}ms 仍有 ${allHandles.length} 个resize句柄残留，强制清理`);
+            allHandles.forEach(handle => {
+              try {
+                if (handle.parentNode) {
+                  handle.parentNode.removeChild(handle);
+                }
+              } catch (e) {
+                console.warn('移除残留resize句柄失败:', e);
+              }
+            });
+          }
+        }, delay);
+      });
+
+      // 如果删除的是当前悬停的节点，清除引用并移除图标
+      if (hoveredElement === cell) {
+        hoveredElement = null;
+        removeNodeDeleteIcon();
+        removeNodePropertyIcon();
+      }
+
+      // 如果删除的是当前正在编辑属性的节点，隐藏属性面板
+      if (currentEditingNode === cell) {
+        hidePropertyPanel();
+      }
+    } catch (error) {
+      console.error('节点删除事件处理出错:', error);
+
+      // 出错时也要确保清理所有图标和句柄
+      try {
+        removeAllRelatedIcons();
+        removeResizeHandles();
+
+        // 重置状态
+        hoveredElement = null;
+        hidePropertyPanel();
+      } catch (e) {
+        console.error('清理失败:', e);
+      }
     }
   });
 
