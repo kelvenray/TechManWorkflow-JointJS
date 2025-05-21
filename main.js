@@ -55,11 +55,16 @@
   }
 
   const graph = new joint.dia.Graph();
+  // 计算初始画布尺寸
+  const paperContainer = document.getElementById('paper-container');
+  const initialWidth = window.innerWidth - 140; // 减去左侧面板宽度
+  const initialHeight = window.innerHeight;
+
   const paper = new joint.dia.Paper({
-    el: document.getElementById('paper-container'),
+    el: paperContainer,
     model: graph,
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: initialWidth,
+    height: initialHeight,
     gridSize: 10,
     drawGrid: true,
     background: { color: '#f8f9fa' },
@@ -97,6 +102,55 @@
                 }
             }
         }
+    },
+    // 设置画布可平移
+    async: true,
+    frozen: false
+  });
+
+  // 添加全局层级管理 - 监听节点添加事件
+  graph.on('add', function(cell) {
+    // 如果添加的是节点（不是连接线）
+    if (!cell.isLink()) {
+      // 检查是否放置在容器节点上
+      const containers = graph.getElements().filter(e => e.isContainer);
+      for (const container of containers) {
+        const bbox = container.getBBox();
+        const cellBBox = cell.getBBox();
+        // 判断节点中心是否在容器内
+        const center = cellBBox.center();
+        if (
+          center.x > bbox.x &&
+          center.x < bbox.x + bbox.width &&
+          center.y > bbox.y &&
+          center.y < bbox.y + bbox.height
+        ) {
+          // 检查节点类型，开始和结束节点不能被嵌套
+          const nodeType = cell.get('type');
+          const isStartOrEnd = nodeType === 'standard.Circle' &&
+                              (cell.attr('label/text') === '开始' || cell.attr('label/text') === '结束');
+
+          if (isStartOrEnd) {
+            // 开始或结束节点不嵌套，但确保它们在最上层
+            cell.toFront();
+            continue;
+          }
+
+          // 如果节点不是容器节点本身，则嵌套
+          if (!cell.isContainer) {
+            // 确保节点在容器上方显示
+            cell.toFront();
+
+            // 嵌套节点到容器中
+            container.embed(cell);
+
+            // 确保嵌套后节点仍然可见
+            setTimeout(() => {
+              cell.toFront();
+            }, 50);
+          }
+        }
+      }
     }
   });
 
@@ -146,18 +200,20 @@
 
   // ========== 左侧 Palette ========== //
   const palette = document.createElement('div');
-  palette.style.position = 'absolute';
+  palette.style.position = 'fixed';
   palette.style.left = '0';
   palette.style.top = '0';
   palette.style.width = '140px';
-  palette.style.height = '100vh';
+  palette.style.height = '100%';
   palette.style.background = '#f4f4f4';
   palette.style.borderRight = '1px solid #ddd';
   palette.style.zIndex = 10;
+  palette.style.boxShadow = '2px 0 5px rgba(0,0,0,0.1)';
   palette.innerHTML = `
     <div draggable="true" class="palette-item" data-type="start">开始</div>
     <div draggable="true" class="palette-item" data-type="process">流程</div>
     <div draggable="true" class="palette-item" data-type="decision">决策</div>
+    <div draggable="true" class="palette-item" data-type="switch">Switch</div>
     <div draggable="true" class="palette-item" data-type="container">容器</div>
     <div draggable="true" class="palette-item" data-type="end">结束</div>
   `;
@@ -201,6 +257,14 @@
 .joint-element text {
   z-index: 3;
 }
+
+/* 平移模式样式 */
+.panning-cursor * {
+  cursor: grab !important;
+}
+.panning-cursor:active * {
+  cursor: grabbing !important;
+}
 `;
   document.head.appendChild(style);
 
@@ -217,6 +281,50 @@
                 fill: '#fff', // 填充颜色
                 cursor: 'crosshair',
                 opacity: 0 // 默认隐藏
+            }
+        },
+        markup: [
+            {
+                tagName: 'circle',
+                selector: 'circle',
+                attributes: {
+                    'r': 4,
+                    'magnet': 'true',
+                    'fill': '#fff',
+                    'stroke': '#333',
+                    'stroke-width': 1
+                }
+            }
+        ]
+    },
+    // 为 Switch 节点添加自定义锚点分组
+    switchPorts: {
+        position: function(ports, elBBox) {
+            // 计算每个锚点的位置
+            if (ports.length === 1) {
+                // 如果只有一个锚点，放在中间
+                return [{ x: elBBox.width / 2, y: elBBox.height }];
+            } else if (ports.length > 1) {
+                // 如果有多个锚点，均匀分布
+                const spacing = elBBox.width / (ports.length + 1);
+                return ports.map((port, index) => {
+                    return {
+                        x: spacing * (index + 1),
+                        y: elBBox.height
+                    };
+                });
+            }
+            return [];
+        },
+        attrs: {
+            circle: {
+                r: 4,
+                magnet: true,
+                stroke: '#333',
+                strokeWidth: 1,
+                fill: '#fff',
+                cursor: 'crosshair',
+                opacity: 0
             }
         },
         markup: [
@@ -347,6 +455,43 @@
         });
         // Set z-index to ensure visibility
         node.set('z', 5);
+    } else if (dragType === 'switch') {
+        node = new joint.shapes.standard.Rectangle();
+        node.position(x - 70, y - 40);
+        node.resize(140, 80);
+        node.attr({
+            body: {
+                fill: '#9c27b0', // 紫色背景
+                stroke: '#6a1b9a',
+                strokeWidth: 3,
+                rx: 10,
+                ry: 10,
+                pointerEvents: 'auto'
+            },
+            label: {
+                text: 'Switch',
+                fill: '#fff',
+                fontWeight: 'bold',
+                fontSize: 18,
+                pointerEvents: 'auto'
+            }
+        });
+
+        // 设置初始 cases 属性，包含一个不可删除的 Default case
+        node.prop('properties', {
+            name: 'Switch',
+            description: '评估多个条件并根据结果继续执行',
+            cases: [
+                { name: 'Default', expression: '', isDefault: true },
+                { name: 'Case 1', expression: '' }
+            ]
+        });
+
+        // 标记为 Switch 节点
+        node.isSwitch = true;
+
+        // Set z-index to ensure visibility
+        node.set('z', 5);
     } else if (dragType === 'container') {
         node = new joint.shapes.standard.Rectangle();
         node.position(x - 150, y - 120);
@@ -386,8 +531,45 @@
 
     // 添加节点和端口
     if (node) {
-        // 如果不是容器节点，添加锚点
-        if (!node.isContainer) {
+        // 如果是 Switch 节点，添加多个锚点
+        if (node.isSwitch) {
+            // 获取 cases 数量
+            const cases = node.prop('properties').cases || [];
+            const casesCount = cases.length;
+
+            console.log('创建 Switch 节点，Cases 数量:', casesCount);
+
+            // 设置端口分组配置
+            node.set('ports', { groups: portGroups });
+
+            // 为每个 case 添加一个锚点
+            for (let i = 0; i < casesCount; i++) {
+                const portId = `case_${i}`;
+                console.log(`添加锚点 ${portId} 对应 Case: ${cases[i].name}`);
+                node.addPort({
+                    id: portId,
+                    group: 'switchPorts', // 使用自定义的 switchPorts 分组
+                    attrs: {
+                        text: {
+                            text: cases[i].name,
+                            fill: '#333',
+                            fontSize: 10,
+                            textAnchor: 'middle',
+                            yAlignment: 'bottom',
+                            refY: 20
+                        },
+                        circle: {
+                            fill: '#fff',
+                            stroke: '#333',
+                            r: 5, // 稍微增大锚点半径，使其更容易看到
+                            opacity: 0
+                        }
+                    }
+                });
+            }
+        }
+        // 如果不是容器节点和Switch节点，添加锚点
+        else if (!node.isContainer) {
             // 设置端口分组配置并添加底部锚点
             node.set('ports', { groups: portGroups }); // 使用 set 方法更新 ports 属性
             node.addPort({ group: 'bottom' }); // 添加底部锚点
@@ -395,6 +577,63 @@
 
         // 添加节点到图表
         node.addTo(graph);
+
+        // 检查是否放置在容器节点上
+        const containers = graph.getElements().filter(e => e.isContainer);
+        for (const container of containers) {
+            const bbox = container.getBBox();
+            const nodeBBox = node.getBBox();
+            // 判断节点中心是否在容器内
+            const center = nodeBBox.center();
+            if (
+                center.x > bbox.x &&
+                center.x < bbox.x + bbox.width &&
+                center.y > bbox.y &&
+                center.y < bbox.y + bbox.height
+            ) {
+                // 检查节点类型，开始和结束节点不能被嵌套
+                const nodeType = node.get('type');
+                const isStartOrEnd = nodeType === 'standard.Circle' &&
+                                    (node.attr('label/text') === '开始' || node.attr('label/text') === '结束');
+
+                if (isStartOrEnd) {
+                    // 开始或结束节点不嵌套，但确保它们在最上层
+                    node.toFront();
+                    continue;
+                }
+
+                // 确保节点在容器上方显示
+                node.toFront();
+
+                // 嵌套节点到容器中
+                container.embed(node);
+
+                // 自动调整节点到容器内部
+                const minX = bbox.x + 10; // 添加内边距
+                const maxX = bbox.x + bbox.width - nodeBBox.width - 10;
+                const minY = bbox.y + 30; // 顶部留出更多空间给标题
+                const maxY = bbox.y + bbox.height - nodeBBox.height - 10;
+                node.position(
+                    Math.max(minX, Math.min(nodeBBox.x, maxX)),
+                    Math.max(minY, Math.min(nodeBBox.y, maxY))
+                );
+
+                // 确保嵌套后节点仍然可见
+                setTimeout(() => {
+                    node.toFront();
+
+                    // 获取所有相关连接线并确保它们在最上层
+                    const relatedLinks = graph.getConnectedLinks(node);
+                    if (relatedLinks.length > 0) {
+                        relatedLinks.forEach(link => {
+                            link.toFront();
+                        });
+                    }
+                }, 50);
+
+                break; // 找到一个容器后就退出循环
+            }
+        }
     }
 
     dragType = null; // 重置 dragType，拖拽结束
@@ -411,9 +650,461 @@
     dragType = null; // 确保拖拽结束时重置
   });
 
-  // ========== 画布自适应 ========== //
-  window.addEventListener('resize', () => {
-    paper.setDimensions(window.innerWidth, window.innerHeight);
+  // ========== 画布自适应和平移功能 ========== //
+  // 获取平移模式指示器
+  const panningIndicator = document.querySelector('.panning-mode-indicator');
+
+  // 平移状态变量
+  let isPanningMode = false;
+  let isPanning = false;
+  let lastClientX = 0;
+  let lastClientY = 0;
+
+  // 调整画布大小函数
+  function resizePaper() {
+    // 获取当前窗口尺寸
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    // 计算画布尺寸（减去左侧面板宽度）
+    const paperWidth = windowWidth - 140; // 140px是左侧面板宽度
+    const paperHeight = windowHeight;
+
+    // 获取当前的平移和缩放
+    const currentTranslate = paper.translate();
+    const currentScale = paper.scale();
+
+    // 设置画布尺寸
+    paper.setDimensions(paperWidth, paperHeight);
+
+    // 触发自定义事件，通知其他组件画布尺寸已更改
+    paper.trigger('paper:resize', paperWidth, paperHeight);
+
+    // 更新小地图视口
+    if (typeof updateMinimapViewport === 'function') {
+      updateMinimapViewport();
+    }
+
+    // 更新小地图尺寸
+    if (typeof updateMinimapSize === 'function') {
+      updateMinimapSize();
+    }
+
+    // 如果有元素，确保它们在视图内
+    const elements = graph.getElements();
+    if (elements.length > 0) {
+      // 获取所有元素的边界框
+      const bbox = graph.getBBox();
+      if (bbox) {
+        // 检查是否需要调整视图以显示所有元素
+        const visibleRect = paper.getArea();
+        const needsAdjustment =
+          bbox.x < visibleRect.x ||
+          bbox.y < visibleRect.y ||
+          bbox.x + bbox.width > visibleRect.x + visibleRect.width ||
+          bbox.y + bbox.height > visibleRect.y + visibleRect.height;
+
+        if (needsAdjustment) {
+          // 计算适当的平移以显示所有元素
+          const tx = -bbox.x + 50; // 添加一些边距
+          const ty = -bbox.y + 50;
+
+          // 应用平移
+          paper.translate(tx, ty);
+        }
+      }
+    }
+  }
+
+  // 初始调整大小 - 使用requestAnimationFrame确保DOM已完全加载
+  requestAnimationFrame(function() {
+    resizePaper();
+  });
+
+  // 监听窗口大小变化 - 使用防抖处理以提高性能
+  let resizeTimeout;
+  window.addEventListener('resize', function() {
+    // 清除之前的定时器
+    clearTimeout(resizeTimeout);
+
+    // 设置新的定时器，延迟执行以防止频繁调用
+    resizeTimeout = setTimeout(function() {
+      resizePaper();
+    }, 100);
+  });
+
+  // 监听空格键按下事件 - 进入平移模式
+  document.addEventListener('keydown', function(evt) {
+    if (evt.code === 'Space' && !isPanningMode) {
+      // 进入平移模式
+      isPanningMode = true;
+      document.body.classList.add('panning-cursor');
+      panningIndicator.style.display = 'block';
+
+      // 暂时禁用其他交互
+      paper.setInteractivity(false);
+    }
+  });
+
+  // 监听空格键释放事件 - 退出平移模式
+  document.addEventListener('keyup', function(evt) {
+    if (evt.code === 'Space' && isPanningMode) {
+      // 退出平移模式
+      isPanningMode = false;
+      isPanning = false;
+      document.body.classList.remove('panning-cursor');
+      panningIndicator.style.display = 'none';
+
+      // 恢复交互
+      paper.setInteractivity(true);
+    }
+  });
+
+  // 监听鼠标按下事件 - 开始平移
+  paper.el.addEventListener('mousedown', function(evt) {
+    if (isPanningMode) {
+      isPanning = true;
+      lastClientX = evt.clientX;
+      lastClientY = evt.clientY;
+
+      // 阻止默认行为和事件冒泡
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
+  });
+
+  // 监听鼠标移动事件 - 执行平移
+  document.addEventListener('mousemove', function(evt) {
+    if (isPanning) {
+      // 计算鼠标移动距离
+      const dx = evt.clientX - lastClientX;
+      const dy = evt.clientY - lastClientY;
+
+      // 更新最后位置
+      lastClientX = evt.clientX;
+      lastClientY = evt.clientY;
+
+      // 获取当前视图转换
+      const currentTranslate = paper.translate();
+
+      // 应用平移
+      paper.translate(currentTranslate.tx + dx, currentTranslate.ty + dy);
+
+      // 阻止默认行为和事件冒泡
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
+  });
+
+  // 监听鼠标释放事件 - 结束平移
+  document.addEventListener('mouseup', function(evt) {
+    if (isPanning) {
+      isPanning = false;
+
+      // 阻止默认行为和事件冒泡
+      evt.preventDefault();
+      evt.stopPropagation();
+    }
+  });
+
+  // 监听鼠标离开窗口事件 - 结束平移
+  document.addEventListener('mouseleave', function() {
+    if (isPanning) {
+      isPanning = false;
+    }
+  });
+
+  // ========== 小地图功能 ========== //
+  // 创建小地图
+  const minimapContainer = document.getElementById('minimap-container');
+  const minimapScale = 0.15; // 小地图缩放比例
+
+  // 创建小地图的 paper 实例
+  const minimap = new joint.dia.Paper({
+    el: minimapContainer,
+    model: graph, // 使用相同的 graph 模型
+    width: 220,
+    height: 180,
+    gridSize: 1,
+    interactive: false, // 禁用交互
+    background: { color: '#f8f9fa' },
+    async: true,
+    frozen: false,
+    sorting: joint.dia.Paper.sorting.NONE, // 提高渲染性能
+    viewport: function(view) {
+      // 简化小地图上的元素显示
+      return true; // 显示所有元素
+    },
+    // 缩放小地图
+    scale: { x: minimapScale, y: minimapScale }
+  });
+
+  // 创建小地图标题
+  const minimapTitle = document.createElement('div');
+  minimapTitle.className = 'minimap-title';
+  minimapTitle.textContent = '工作流概览';
+  minimapContainer.appendChild(minimapTitle);
+
+  // 创建视口指示器
+  const minimapViewport = document.createElement('div');
+  minimapViewport.className = 'minimap-viewport';
+  minimapContainer.appendChild(minimapViewport);
+
+  // 设置小地图初始透明度
+  minimapContainer.style.opacity = '0.7';
+
+  // 更新视口指示器位置和大小
+  function updateMinimapViewport() {
+    // 获取主画布的可视区域和内容区域
+    const paperRect = paper.getContentBBox();
+    const visibleRect = paper.getArea();
+
+    // 获取当前的平移和缩放
+    const currentTranslate = paper.translate();
+    const currentScale = paper.scale();
+
+    // 获取当前画布尺寸
+    const paperWidth = paper.options.width;
+    const paperHeight = paper.options.height;
+
+    // 计算实际可见区域（考虑平移和缩放）
+    const actualVisibleRect = {
+      x: -currentTranslate.tx / currentScale.sx,
+      y: -currentTranslate.ty / currentScale.sy,
+      width: paperWidth / currentScale.sx,
+      height: paperHeight / currentScale.sy
+    };
+
+    // 确保小地图能显示所有内容
+    let contentWidth = 0;
+    let contentHeight = 0;
+
+    // 如果有元素，使用元素的边界框
+    if (paperRect && paperRect.width && paperRect.height) {
+      contentWidth = Math.max(paperRect.width, actualVisibleRect.width);
+      contentHeight = Math.max(paperRect.height, actualVisibleRect.height);
+    } else {
+      // 如果没有元素，使用可视区域
+      contentWidth = actualVisibleRect.width;
+      contentHeight = actualVisibleRect.height;
+    }
+
+    // 获取小地图的当前缩放比例
+    const minimapCurrentScale = minimap.scale();
+    const effectiveMinimapScale = minimapCurrentScale.sx;
+
+    // 计算视口指示器的位置和大小
+    const minimapX = actualVisibleRect.x * effectiveMinimapScale;
+    const minimapY = actualVisibleRect.y * effectiveMinimapScale;
+    const minimapWidth = actualVisibleRect.width * effectiveMinimapScale;
+    const minimapHeight = actualVisibleRect.height * effectiveMinimapScale;
+
+    // 设置视口指示器的位置和大小
+    minimapViewport.style.left = minimapX + 'px';
+    minimapViewport.style.top = minimapY + 'px';
+    minimapViewport.style.width = minimapWidth + 'px';
+    minimapViewport.style.height = minimapHeight + 'px';
+
+    // 确保小地图视口指示器不超出小地图边界
+    const vpLeft = parseFloat(minimapViewport.style.left);
+    const vpTop = parseFloat(minimapViewport.style.top);
+    const vpWidth = parseFloat(minimapViewport.style.width);
+    const vpHeight = parseFloat(minimapViewport.style.height);
+
+    if (vpLeft < 0) minimapViewport.style.left = '0px';
+    if (vpTop < 0) minimapViewport.style.top = '0px';
+    if (vpLeft + vpWidth > minimap.options.width) {
+      minimapViewport.style.width = (minimap.options.width - vpLeft) + 'px';
+    }
+    if (vpTop + vpHeight > minimap.options.height) {
+      minimapViewport.style.height = (minimap.options.height - vpTop) + 'px';
+    }
+  }
+
+  // 初始更新视口指示器
+  updateMinimapViewport();
+
+  // 监听主画布的变化，更新视口指示器
+  paper.on('translate', updateMinimapViewport);
+  paper.on('scale', updateMinimapViewport);
+  paper.on('resize', updateMinimapViewport);
+
+  // 监听小地图上的视口指示器拖动
+  let isDraggingViewport = false;
+  let lastMinimapX = 0;
+  let lastMinimapY = 0;
+
+  // 视口指示器拖动开始
+  minimapViewport.addEventListener('mousedown', function(evt) {
+    isDraggingViewport = true;
+    lastMinimapX = evt.clientX;
+    lastMinimapY = evt.clientY;
+
+    // 阻止事件冒泡和默认行为
+    evt.stopPropagation();
+    evt.preventDefault();
+  });
+
+  // 视口指示器拖动
+  document.addEventListener('mousemove', function(evt) {
+    if (!isDraggingViewport) return;
+
+    // 计算鼠标移动距离
+    const dx = evt.clientX - lastMinimapX;
+    const dy = evt.clientY - lastMinimapY;
+
+    // 更新最后位置
+    lastMinimapX = evt.clientX;
+    lastMinimapY = evt.clientY;
+
+    // 计算主画布应该平移的距离（考虑缩放比例）
+    const paperDx = dx / minimapScale;
+    const paperDy = dy / minimapScale;
+
+    // 获取当前主画布的平移位置
+    const currentTranslate = paper.translate();
+
+    // 应用平移到主画布
+    paper.translate(currentTranslate.tx - paperDx, currentTranslate.ty - paperDy);
+
+    // 阻止事件冒泡和默认行为
+    evt.stopPropagation();
+    evt.preventDefault();
+  });
+
+  // 视口指示器拖动结束
+  document.addEventListener('mouseup', function() {
+    isDraggingViewport = false;
+  });
+
+  // 调整小地图内容以适应所有元素
+  function fitMinimapContent() {
+    // 获取所有元素的边界框
+    const elements = graph.getElements();
+
+    // 如果没有元素，使用默认缩放
+    if (elements.length === 0) {
+      minimap.scale(minimapScale, minimapScale);
+      updateMinimapViewport();
+      return;
+    }
+
+    // 计算所有元素的总边界框
+    const bbox = graph.getBBox();
+    if (!bbox) {
+      minimap.scale(minimapScale, minimapScale);
+      updateMinimapViewport();
+      return;
+    }
+
+    // 获取主画布的可视区域
+    const visibleRect = paper.getArea();
+
+    // 添加一些边距
+    const padding = 20;
+    const expandedBBox = {
+      x: Math.min(bbox.x, visibleRect.x) - padding,
+      y: Math.min(bbox.y, visibleRect.y) - padding,
+      width: Math.max(bbox.width, visibleRect.width) + padding * 2,
+      height: Math.max(bbox.height, visibleRect.height) + padding * 2
+    };
+
+    // 计算适当的缩放比例
+    const scaleX = minimap.options.width / expandedBBox.width;
+    const scaleY = minimap.options.height / expandedBBox.height;
+    const scale = Math.min(scaleX, scaleY, 0.15); // 不超过0.15的缩放
+
+    // 应用新的缩放比例
+    minimap.scale(scale, scale);
+
+    // 更新视口指示器
+    updateMinimapViewport();
+  }
+
+  // 监听元素添加和删除事件，更新小地图
+  graph.on('add remove change:position change:size', function(cell) {
+    // 延迟更新，避免频繁更新
+    clearTimeout(this._minimapUpdateTimeout);
+    this._minimapUpdateTimeout = setTimeout(function() {
+      updateMinimapViewport();
+
+      // 如果是添加或删除操作，考虑调整小地图缩放
+      if (cell && (!cell.previous('position') || !cell.previous('size'))) {
+        fitMinimapContent();
+      }
+    }, 50);
+  });
+
+  // 更新小地图尺寸和位置的函数
+  function updateMinimapSize() {
+    // 调整小地图大小
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+
+    // 在小屏幕上缩小小地图
+    if (windowWidth < 768) {
+      minimap.setDimensions(180, 150);
+      minimapContainer.style.width = '180px';
+      minimapContainer.style.height = '150px';
+    } else {
+      minimap.setDimensions(220, 180);
+      minimapContainer.style.width = '220px';
+      minimapContainer.style.height = '180px';
+    }
+
+    // 确保小地图位置正确（右下角）
+    minimapContainer.style.right = '20px';
+    minimapContainer.style.bottom = '20px';
+
+    // 更新小地图视口
+    updateMinimapViewport();
+
+    // 重新适应内容
+    fitMinimapContent();
+  }
+
+  // 初始化小地图尺寸
+  updateMinimapSize();
+
+  // 监听窗口大小变化，更新小地图 - 使用防抖处理
+  let minimapResizeTimeout;
+  window.addEventListener('resize', function() {
+    // 清除之前的定时器
+    clearTimeout(minimapResizeTimeout);
+
+    // 设置新的定时器，延迟执行以防止频繁调用
+    minimapResizeTimeout = setTimeout(function() {
+      updateMinimapSize();
+    }, 100);
+  });
+
+  // 监听小地图容器的点击事件，实现直接跳转
+  minimapContainer.addEventListener('mousedown', function(evt) {
+    // 如果点击的是视口指示器，不处理
+    if (evt.target === minimapViewport) return;
+
+    // 获取点击位置相对于小地图的坐标
+    const minimapRect = minimapContainer.getBoundingClientRect();
+    const clickX = evt.clientX - minimapRect.left;
+    const clickY = evt.clientY - minimapRect.top;
+
+    // 计算对应主画布的坐标（考虑缩放比例）
+    const paperX = clickX / minimapScale;
+    const paperY = clickY / minimapScale;
+
+    // 获取主画布的可视区域大小
+    const visibleRect = paper.getArea();
+
+    // 计算新的平移位置（使点击位置居中）
+    const newTx = -paperX + visibleRect.width / 2;
+    const newTy = -paperY + visibleRect.height / 2;
+
+    // 应用平移到主画布
+    paper.translate(newTx, newTy);
+
+    // 阻止事件冒泡和默认行为
+    evt.stopPropagation();
+    evt.preventDefault();
   });
 
   // ========== 删除连接线 ========== //
@@ -568,9 +1259,162 @@
       transform: scale(1.2) !important;
     }
 
+    /* 节点属性图标样式 */
+    .node-property-icon {
+      position: absolute;
+      border-radius: 4px;
+      background-color: black;
+      box-shadow: 0 0 5px rgba(0,0,0,0.5);
+      cursor: pointer;
+      z-index: 10000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: transform 0.2s ease;
+      pointer-events: all !important;
+      height: 10px !important; /* 降低高度 */
+    }
+    .node-property-icon:hover {
+      transform: scale(1.2) !important;
+    }
+    .node-property-icon .dot {
+      width: 3px;
+      height: 3px;
+      border-radius: 50%;
+      background-color: white;
+      margin: 0 1px;
+    }
+
     /* 确保删除图标在最上层 */
     .joint-tools {
       z-index: 10000;
+    }
+
+    /* 属性面板样式 */
+    .property-panel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: white;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      padding: 20px;
+      z-index: 20000;
+      min-width: 300px;
+      max-width: 500px;
+      max-height: 90vh;
+      overflow-y: auto;
+      display: none;
+    }
+
+    .property-panel h3 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: #333;
+      font-size: 18px;
+      border-bottom: 1px solid #eee;
+      padding-bottom: 10px;
+    }
+
+    .property-panel .form-group {
+      margin-bottom: 15px;
+    }
+
+    .property-panel label {
+      display: block;
+      margin-bottom: 5px;
+      font-weight: bold;
+      color: #555;
+    }
+
+    .property-panel input[type="text"],
+    .property-panel input[type="number"],
+    .property-panel select,
+    .property-panel textarea {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      box-sizing: border-box;
+      font-size: 14px;
+    }
+
+    .property-panel textarea {
+      min-height: 80px;
+      resize: vertical;
+    }
+
+    .property-panel .button-group {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 20px;
+    }
+
+    .property-panel button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      margin-left: 10px;
+    }
+
+    .property-panel .save-btn {
+      background-color: #2196f3;
+      color: white;
+    }
+
+    .property-panel .save-btn:hover {
+      background-color: #1976d2;
+    }
+
+    .property-panel .cancel-btn {
+      background-color: #f5f5f5;
+      color: #333;
+    }
+
+    .property-panel .cancel-btn:hover {
+      background-color: #e0e0e0;
+    }
+
+    /* Switch 节点 Cases 容器样式 */
+    #cases-container {
+      border: 1px solid #eee;
+      border-radius: 4px;
+      padding: 10px;
+      background-color: #f9f9f9;
+    }
+
+    #cases-container .case-item {
+      background-color: white;
+      border-radius: 4px;
+      padding: 10px;
+      margin-bottom: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    #cases-container .case-item:last-child {
+      margin-bottom: 0;
+    }
+
+    /* 滚动条样式 */
+    #cases-container::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    #cases-container::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
+    }
+
+    #cases-container::-webkit-scrollbar-thumb {
+      background: #ccc;
+      border-radius: 4px;
+    }
+
+    #cases-container::-webkit-scrollbar-thumb:hover {
+      background: #aaa;
     }
 
     /* 容器节点样式 */
@@ -925,12 +1769,14 @@
 
   // 这部分代码将被删除，因为我们会合并到下面的鼠标事件处理程序中
 
-  // ========== 节点删除功能 ========== //
-  // 使用更简单的方法实现节点删除功能
-  // 存储当前悬停的节点和删除图标
+  // ========== 节点删除和属性功能 ========== //
+  // 存储当前悬停的节点和图标
   let hoveredElement = null;
   let nodeDeleteIcon = null;
+  let nodePropertyIcon = null;
   let hideIconTimeout = null; // 用于延迟隐藏图标的定时器
+  let propertyPanel = null; // 属性面板
+  let currentEditingNode = null; // 当前正在编辑属性的节点
 
   // 创建删除图标的函数
   function createNodeDeleteIcon(elementView) {
@@ -1026,8 +1872,12 @@
           }
         }
 
+        // 确保移除resize句柄和图标
+        removeResizeHandles();
         hoveredElement = null;
         removeNodeDeleteIcon();
+        removeNodePropertyIcon();
+        hidePropertyPanel();
       }
     };
 
@@ -1083,8 +1933,135 @@
     }
   }
 
-  // 延迟隐藏删除图标的函数
-  function delayHideNodeDeleteIcon() {
+  // 创建属性图标的函数
+  function createNodePropertyIcon(elementView) {
+    // 移除旧的图标（如果存在）
+    removeNodePropertyIcon();
+
+    // 获取节点的位置和大小
+    const element = elementView.model;
+
+    // 检查是否为开始或结束节点，如果是则不显示属性图标
+    const nodeType = element.get('type');
+    const nodeLabel = element.attr('label/text');
+    if (nodeType === 'standard.Circle' && (nodeLabel === '开始' || nodeLabel === '结束')) {
+      return null;
+    }
+
+    const position = element.position();
+    const size = element.size();
+
+    // 创建一个DOM元素作为属性图标
+    const iconSize = 16;
+    const iconHeight = 10; // 降低高度
+    const iconElement = document.createElement('div');
+    iconElement.className = 'node-property-icon';
+    iconElement.style.position = 'fixed'; // 使用fixed定位，避免滚动问题
+    iconElement.style.width = `${iconSize}px`;
+    iconElement.style.height = `${iconHeight}px`;
+    iconElement.style.borderRadius = '4px';
+    iconElement.style.backgroundColor = 'black';
+    iconElement.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+    iconElement.style.cursor = 'pointer';
+    iconElement.style.zIndex = '10000';
+    iconElement.style.display = 'flex';
+    iconElement.style.justifyContent = 'center';
+    iconElement.style.alignItems = 'center';
+    iconElement.style.transition = 'transform 0.2s ease';
+    iconElement.style.pointerEvents = 'auto'; // 确保图标可点击
+
+    // 添加三个点图标
+    iconElement.innerHTML = `
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    `;
+
+    // 添加悬停效果和鼠标状态跟踪
+    iconElement.onmouseover = function() {
+      this.style.transform = 'scale(1.2)';
+      this._isMouseOver = true; // 标记鼠标在图标上
+
+      // 清除任何现有的延迟隐藏定时器
+      if (hideIconTimeout) {
+        clearTimeout(hideIconTimeout);
+        hideIconTimeout = null;
+      }
+    };
+    iconElement.onmouseout = function() {
+      this.style.transform = 'scale(1)';
+      this._isMouseOver = false; // 标记鼠标不在图标上
+
+      // 如果鼠标不在节点上，延迟隐藏图标
+      if (!hoveredElement) {
+        delayHideIcons();
+      }
+    };
+
+    // 添加点击事件
+    iconElement.onclick = function(evt) {
+      evt.stopPropagation();
+      evt.preventDefault();
+      console.log('属性图标被点击');
+      if (hoveredElement) {
+        // 显示属性面板
+        showPropertyPanel(hoveredElement);
+      }
+    };
+
+    // 获取paper元素的位置
+    const paperRect = paper.el.getBoundingClientRect();
+
+    // 计算图标在页面中的位置（顶部中间，增加向下偏移）
+    let iconX, iconY;
+
+    // 对于所有节点类型，图标位置都在顶部中间
+    iconX = position.x + size.width / 2;
+
+    // 根据节点类型和大小动态计算偏移量
+    let yOffset = 10; // 默认偏移10px
+
+    // 对于菱形节点（决策节点），增加偏移量
+    if (nodeType === 'standard.Polygon') {
+      yOffset = Math.max(15, size.height * 0.15); // 至少15px或节点高度的15%
+    }
+    // 对于容器节点，使用固定偏移
+    else if (element.isContainer) {
+      yOffset = 10; // 固定为10px，与普通节点一致
+    }
+    // 对于普通矩形节点，使用默认偏移
+
+    iconY = position.y + yOffset;
+
+    // 将SVG坐标转换为页面坐标
+    const svgPoint = paper.svg.createSVGPoint();
+    svgPoint.x = iconX;
+    svgPoint.y = iconY;
+    const screenPoint = svgPoint.matrixTransform(paper.svg.getScreenCTM());
+
+    // 设置图标位置
+    iconElement.style.left = `${screenPoint.x - iconSize/2}px`;
+    iconElement.style.top = `${screenPoint.y - iconHeight/2}px`;
+
+    // 将图标添加到body中
+    document.body.appendChild(iconElement);
+
+    // 保存图标引用
+    nodePropertyIcon = iconElement;
+
+    return nodePropertyIcon;
+  }
+
+  // 移除属性图标的函数
+  function removeNodePropertyIcon() {
+    if (nodePropertyIcon && nodePropertyIcon.parentNode) {
+      nodePropertyIcon.parentNode.removeChild(nodePropertyIcon);
+      nodePropertyIcon = null;
+    }
+  }
+
+  // 延迟隐藏图标的函数
+  function delayHideIcons() {
     // 清除任何现有的延迟隐藏定时器
     if (hideIconTimeout) {
       clearTimeout(hideIconTimeout);
@@ -1092,17 +2069,476 @@
 
     // 设置新的延迟隐藏定时器
     hideIconTimeout = setTimeout(function() {
-      // 检查鼠标是否在删除图标上
-      if (nodeDeleteIcon && nodeDeleteIcon._isMouseOver) {
-        return; // 如果鼠标在删除图标上，不隐藏
+      // 检查鼠标是否在图标上
+      if ((nodeDeleteIcon && nodeDeleteIcon._isMouseOver) ||
+          (nodePropertyIcon && nodePropertyIcon._isMouseOver)) {
+        return; // 如果鼠标在任一图标上，不隐藏
       }
 
       removeNodeDeleteIcon();
+      removeNodePropertyIcon();
       hideIconTimeout = null;
     }, 300); // 300毫秒延迟
   }
 
-  // 鼠标进入节点时显示删除图标和调整句柄
+  // 创建属性面板
+  function createPropertyPanel() {
+    // 如果面板已存在，先移除旧的面板
+    if (propertyPanel) {
+      if (propertyPanel.parentNode) {
+        propertyPanel.parentNode.removeChild(propertyPanel);
+      }
+      propertyPanel = null;
+    }
+
+    // 创建面板元素
+    const panel = document.createElement('div');
+    panel.className = 'property-panel';
+    document.body.appendChild(panel);
+
+    // 添加点击事件，防止点击面板时关闭面板
+    panel.addEventListener('click', function(evt) {
+      evt.stopPropagation();
+    });
+
+    // 移除旧的文档点击事件监听器
+    if (window._propertyPanelClickHandler) {
+      document.removeEventListener('click', window._propertyPanelClickHandler);
+    }
+
+    // 添加点击文档事件，点击面板外部时关闭面板
+    window._propertyPanelClickHandler = function(evt) {
+      if (propertyPanel && propertyPanel.style.display === 'block') {
+        // 检查点击是否在面板外部
+        if (!propertyPanel.contains(evt.target)) {
+          hidePropertyPanel();
+        }
+      }
+    };
+    document.addEventListener('click', window._propertyPanelClickHandler);
+
+    propertyPanel = panel;
+    return panel;
+  }
+
+  // 显示属性面板
+  function showPropertyPanel(element) {
+    console.log('显示属性面板', element.id);
+
+    // 保存当前编辑的节点
+    currentEditingNode = element;
+
+    // 获取或创建面板
+    const panel = createPropertyPanel();
+
+    // 根据节点类型生成不同的表单内容
+    const nodeType = element.get('type');
+    const nodeLabel = element.attr('label/text');
+
+    // 获取节点已有的属性数据
+    const properties = element.prop('properties') || {};
+
+    let panelContent = '';
+    let panelTitle = '';
+
+    if (nodeType === 'standard.Circle' && nodeLabel === '开始') {
+      // 开始节点属性
+      panelTitle = '开始节点属性';
+      panelContent = `
+        <div class="form-group">
+          <label for="node-name">节点名称</label>
+          <input type="text" id="node-name" value="${properties.name || '开始'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+      `;
+    } else if (nodeType === 'standard.Circle' && nodeLabel === '结束') {
+      // 结束节点属性
+      panelTitle = '结束节点属性';
+      panelContent = `
+        <div class="form-group">
+          <label for="node-name">节点名称</label>
+          <input type="text" id="node-name" value="${properties.name || '结束'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+      `;
+    } else if (nodeType === 'standard.Rectangle' && !element.isContainer && !element.isSwitch) {
+      // 流程节点属性
+      panelTitle = '流程节点属性';
+      panelContent = `
+        <div class="form-group">
+          <label for="node-name">节点名称</label>
+          <input type="text" id="node-name" value="${properties.name || '流程'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="node-action">执行动作</label>
+          <input type="text" id="node-action" value="${properties.action || ''}" />
+        </div>
+        <div class="form-group">
+          <label for="node-duration">预计耗时（分钟）</label>
+          <input type="number" id="node-duration" value="${properties.duration || '0'}" min="0" />
+        </div>
+      `;
+    } else if (nodeType === 'standard.Polygon') {
+      // 决策节点属性
+      panelTitle = '决策节点属性';
+      panelContent = `
+        <div class="form-group">
+          <label for="node-name">节点名称</label>
+          <input type="text" id="node-name" value="${properties.name || '决策'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="node-condition">决策条件</label>
+          <textarea id="node-condition">${properties.condition || ''}</textarea>
+        </div>
+      `;
+    } else if (element.isSwitch) {
+      // Switch 节点属性
+      panelTitle = 'Switch 节点属性';
+
+      // 获取 cases 数据
+      const cases = properties.cases || [
+        { name: 'Case 1', expression: '' },
+        { name: 'Case 2', expression: '' }
+      ];
+
+      // 生成基本属性表单
+      panelContent = `
+        <div class="form-group">
+          <label for="node-name">节点名称</label>
+          <input type="text" id="node-name" value="${properties.name || 'Switch'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || '评估多个条件并根据结果继续执行'}</textarea>
+        </div>
+        <h4 style="margin-top: 20px; border-bottom: 1px solid #eee; padding-bottom: 8px;">Cases</h4>
+        <div id="cases-container" style="max-height: 300px; overflow-y: auto; padding-right: 5px;">
+      `;
+
+      // 生成 cases 表单
+      cases.forEach((caseItem, index) => {
+        // 检查是否为 Default case
+        const isDefault = caseItem.isDefault === true;
+
+        panelContent += `
+          <div class="case-item" data-index="${index}" ${isDefault ? 'data-default="true"' : ''}>
+            <div style="display: flex; margin-bottom: 10px; align-items: center;">
+              <div style="flex: 1;">
+                <label for="case-name-${index}">名称</label>
+                <input type="text" id="case-name-${index}" value="${caseItem.name}" style="width: 100%; ${isDefault ? 'background-color: #f5f5f5;' : ''}" ${isDefault ? 'disabled' : ''} />
+              </div>
+              ${!isDefault ? `
+              <button type="button" class="delete-case-btn" data-index="${index}" style="margin-left: 10px; background: #f44336; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer;">
+                <span style="font-size: 16px;">&times;</span>
+              </button>
+              ` : ''}
+            </div>
+            ${!isDefault ? `
+            <div>
+              <label for="case-expression-${index}">表达式</label>
+              <textarea id="case-expression-${index}" style="width: 100%; min-height: 60px;">${caseItem.expression}</textarea>
+            </div>
+            ` : `
+            <div style="padding: 10px; background-color: #f9f9f9; border-radius: 4px; font-style: italic; color: #666;">
+              Default Case 是默认执行路径，不需要表达式判断
+            </div>
+            `}
+          </div>
+        `;
+      });
+
+      // 添加 "添加 Case" 按钮
+      panelContent += `
+        </div>
+        <button type="button" id="add-case-btn" style="background: #4CAF50; color: white; border: none; border-radius: 4px; padding: 8px 16px; margin-top: 10px; cursor: pointer; display: flex; align-items: center;">
+          <span style="font-size: 18px; margin-right: 5px;">+</span> 添加 Case
+        </button>
+      `;
+    } else if (element.isContainer) {
+      // 容器节点属性
+      panelTitle = '容器节点属性';
+      panelContent = `
+        <div class="form-group">
+          <label for="node-name">容器名称</label>
+          <input type="text" id="node-name" value="${properties.name || '容器'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+        <div class="form-group">
+          <label for="node-category">分类</label>
+          <input type="text" id="node-category" value="${properties.category || ''}" />
+        </div>
+      `;
+    }
+
+    // 添加按钮
+    panelContent += `
+      <div class="button-group">
+        <button class="cancel-btn" id="property-cancel">取消</button>
+        <button class="save-btn" id="property-save">保存</button>
+      </div>
+    `;
+
+    // 设置面板内容
+    panel.innerHTML = `<h3>${panelTitle}</h3>${panelContent}`;
+
+    // 显示面板
+    panel.style.display = 'block';
+
+    // 添加按钮事件
+    const saveBtn = document.getElementById('property-save');
+    const cancelBtn = document.getElementById('property-cancel');
+
+    // 移除旧的事件监听器（如果存在）
+    if (saveBtn) {
+      const newSaveBtn = saveBtn.cloneNode(true);
+      saveBtn.parentNode.replaceChild(newSaveBtn, saveBtn);
+      newSaveBtn.addEventListener('click', saveNodeProperties);
+    }
+
+    if (cancelBtn) {
+      const newCancelBtn = cancelBtn.cloneNode(true);
+      cancelBtn.parentNode.replaceChild(newCancelBtn, cancelBtn);
+      newCancelBtn.addEventListener('click', hidePropertyPanel);
+    }
+
+    // 如果是 Switch 节点，添加 Case 相关事件
+    if (element.isSwitch) {
+      // 添加 Case 按钮事件
+      const addCaseBtn = document.getElementById('add-case-btn');
+      if (addCaseBtn) {
+        addCaseBtn.addEventListener('click', function() {
+          const casesContainer = document.getElementById('cases-container');
+          const caseItems = casesContainer.querySelectorAll('.case-item');
+          const newIndex = caseItems.length;
+
+          // 创建新的 Case 元素
+          const newCaseElement = document.createElement('div');
+          newCaseElement.className = 'case-item';
+          newCaseElement.dataset.index = newIndex;
+          newCaseElement.innerHTML = `
+            <div style="display: flex; margin-bottom: 10px; align-items: center;">
+              <div style="flex: 1;">
+                <label for="case-name-${newIndex}">名称</label>
+                <input type="text" id="case-name-${newIndex}" value="Case ${newIndex + 1}" style="width: 100%;" />
+              </div>
+              <button type="button" class="delete-case-btn" data-index="${newIndex}" style="margin-left: 10px; background: #f44336; color: white; border: none; border-radius: 4px; padding: 5px 10px; cursor: pointer;">
+                <span style="font-size: 16px;">&times;</span>
+              </button>
+            </div>
+            <div>
+              <label for="case-expression-${newIndex}">表达式</label>
+              <textarea id="case-expression-${newIndex}" style="width: 100%; min-height: 60px;"></textarea>
+            </div>
+          `;
+
+          // 添加到容器
+          casesContainer.appendChild(newCaseElement);
+
+          // 添加删除按钮事件
+          const deleteBtn = newCaseElement.querySelector('.delete-case-btn');
+          deleteBtn.addEventListener('click', function() {
+            // 检查是否为 Default case，Default case 不能删除
+            if (newCaseElement.dataset.default === 'true') {
+              alert('Default case 不能删除');
+              return;
+            }
+
+            casesContainer.removeChild(newCaseElement);
+          });
+        });
+      }
+
+      // 为现有的删除 Case 按钮添加事件
+      const deleteCaseBtns = document.querySelectorAll('.delete-case-btn');
+      deleteCaseBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+          const index = this.dataset.index;
+          const caseItem = document.querySelector(`.case-item[data-index="${index}"]`);
+          if (caseItem) {
+            // 检查是否为 Default case，Default case 不能删除
+            if (caseItem.dataset.default === 'true') {
+              alert('Default case 不能删除');
+              return;
+            }
+
+            const casesContainer = document.getElementById('cases-container');
+            casesContainer.removeChild(caseItem);
+          }
+        });
+      });
+    }
+  }
+
+  // 隐藏属性面板
+  function hidePropertyPanel() {
+    console.log('隐藏属性面板');
+    if (propertyPanel) {
+      propertyPanel.style.display = 'none';
+    }
+    currentEditingNode = null;
+  }
+
+  // 保存节点属性
+  function saveNodeProperties() {
+    if (!currentEditingNode) return;
+
+    // 获取节点类型
+    const nodeType = currentEditingNode.get('type');
+    const nodeLabel = currentEditingNode.attr('label/text');
+
+    // 创建属性对象
+    const properties = {
+      name: document.getElementById('node-name').value,
+      description: document.getElementById('node-description').value
+    };
+
+    // 根据节点类型获取特定属性
+    if (nodeType === 'standard.Rectangle' && !currentEditingNode.isContainer && !currentEditingNode.isSwitch) {
+      // 流程节点特有属性
+      properties.action = document.getElementById('node-action').value;
+      properties.duration = document.getElementById('node-duration').value;
+    } else if (nodeType === 'standard.Polygon') {
+      // 决策节点特有属性
+      properties.condition = document.getElementById('node-condition').value;
+    } else if (currentEditingNode.isContainer) {
+      // 容器节点特有属性
+      properties.category = document.getElementById('node-category').value;
+    } else if (currentEditingNode.isSwitch) {
+      // Switch 节点特有属性 - 收集 cases
+      const casesContainer = document.getElementById('cases-container');
+      const caseItems = casesContainer.querySelectorAll('.case-item');
+      const cases = [];
+
+      caseItems.forEach((caseItem, index) => {
+        const caseIndex = caseItem.dataset.index;
+        const caseName = document.getElementById(`case-name-${caseIndex}`).value;
+        const isDefault = caseItem.dataset.default === 'true';
+
+        // 对于 Default case，表达式字段可能不存在，因为我们在UI中移除了它
+        let caseExpression = '';
+        if (!isDefault) {
+          const expressionElement = document.getElementById(`case-expression-${caseIndex}`);
+          if (expressionElement) {
+            caseExpression = expressionElement.value;
+          }
+        }
+
+        cases.push({
+          name: caseName,
+          expression: caseExpression,
+          isDefault: isDefault
+        });
+      });
+
+      // 确保至少有一个 Default case
+      const hasDefault = cases.some(c => c.isDefault);
+      if (!hasDefault && cases.length > 0) {
+        // 如果没有 Default case，将第一个 case 设为 Default
+        cases[0].name = 'Default';
+        cases[0].isDefault = true;
+      } else if (cases.length === 0) {
+        // 如果没有任何 case，添加一个 Default case
+        cases.push({
+          name: 'Default',
+          expression: '',
+          isDefault: true
+        });
+      }
+
+      properties.cases = cases;
+
+      // 更新 Switch 节点的锚点
+      updateSwitchPorts(currentEditingNode, cases);
+    }
+
+    // 保存属性到节点
+    currentEditingNode.prop('properties', properties);
+
+    // 更新节点显示的文本
+    if (properties.name) {
+      currentEditingNode.attr('label/text', properties.name);
+    }
+
+    // 隐藏面板
+    hidePropertyPanel();
+  }
+
+  // 更新 Switch 节点的锚点
+  function updateSwitchPorts(node, cases) {
+    if (!node || !node.isSwitch) return;
+
+    console.log('更新 Switch 节点锚点，Cases 数量:', cases.length);
+
+    // 移除所有现有锚点
+    const ports = node.getPorts();
+    ports.forEach(port => {
+      node.removePort(port.id);
+    });
+
+    // 为每个 case 添加一个锚点
+    const casesCount = cases.length;
+    for (let i = 0; i < casesCount; i++) {
+      const portId = `case_${i}`;
+      console.log(`添加锚点 ${portId} 对应 Case: ${cases[i].name}`);
+      node.addPort({
+        id: portId,
+        group: 'switchPorts', // 使用自定义的 switchPorts 分组
+        attrs: {
+          text: {
+            text: cases[i].name,
+            fill: '#333',
+            fontSize: 10,
+            textAnchor: 'middle',
+            yAlignment: 'bottom',
+            refY: 20
+          },
+          circle: {
+            fill: '#fff',
+            stroke: '#333',
+            r: 5, // 稍微增大锚点半径，使其更容易看到
+            opacity: 0
+          }
+        }
+      });
+    }
+
+    // 确保锚点可见
+    setTimeout(() => {
+      const elementView = paper.findViewByModel(node);
+      if (elementView) {
+        const ports = elementView.el.querySelectorAll('.joint-port');
+        if (ports && ports.length > 0) {
+          ports.forEach(port => {
+            port.style.opacity = 1;
+            port.style.visibility = 'visible';
+          });
+        }
+
+        node.getPorts().forEach(port => {
+          node.portProp(port.id, 'attrs/circle/opacity', 1);
+        });
+      }
+    }, 100);
+  }
+
+  // 鼠标进入节点时显示删除图标、属性图标和调整句柄
   paper.on('element:mouseover', function(elementView, evt) {
     const element = elementView.model;
 
@@ -1111,6 +2547,13 @@
 
     // 创建并显示删除图标
     createNodeDeleteIcon(elementView);
+
+    // 创建并显示属性图标（对于开始和结束节点不显示）
+    const nodeType = element.get('type');
+    const nodeLabel = element.attr('label/text');
+    if (!(nodeType === 'standard.Circle' && (nodeLabel === '开始' || nodeLabel === '结束'))) {
+      createNodePropertyIcon(elementView);
+    }
 
     // 如果是容器节点，显示调整大小的句柄
     if (element.isContainer && element.isResizable) {
@@ -1189,6 +2632,11 @@
     // 检查鼠标是否移动到了删除图标上
     if (nodeDeleteIcon && (relatedTarget === nodeDeleteIcon || nodeDeleteIcon.contains(relatedTarget))) {
       return; // 如果鼠标移动到了删除图标上，不做任何处理
+    }
+
+    // 检查鼠标是否移动到了属性图标上
+    if (nodePropertyIcon && (relatedTarget === nodePropertyIcon || nodePropertyIcon.contains(relatedTarget))) {
+      return; // 如果鼠标移动到了属性图标上，不做任何处理
     }
 
     // 如果是容器节点
@@ -1275,27 +2723,37 @@
       }
 
       hoveredElement = null;
-      delayHideNodeDeleteIcon(); // 使用延迟隐藏而不是立即隐藏
+      delayHideIcons(); // 使用延迟隐藏而不是立即隐藏
     }
   });
 
-  // 当节点移动时，更新删除图标位置
+  // 当节点移动时，更新图标位置
   paper.on('element:pointermove', function(elementView, evt, x, y) {
-    if (hoveredElement === elementView.model && nodeDeleteIcon) {
+    if (hoveredElement === elementView.model) {
       // 使用requestAnimationFrame来优化性能
       requestAnimationFrame(function() {
-        createNodeDeleteIcon(elementView);
+        if (nodeDeleteIcon) {
+          createNodeDeleteIcon(elementView);
+        }
+        if (nodePropertyIcon) {
+          createNodePropertyIcon(elementView);
+        }
       });
     }
   });
 
-  // 当画布缩放或平移时，更新删除图标位置
+  // 当画布缩放或平移时，更新图标位置
   paper.on('scale translate', function() {
-    if (hoveredElement && nodeDeleteIcon) {
+    if (hoveredElement) {
       const elementView = paper.findViewByModel(hoveredElement);
       if (elementView) {
         requestAnimationFrame(function() {
-          createNodeDeleteIcon(elementView);
+          if (nodeDeleteIcon) {
+            createNodeDeleteIcon(elementView);
+          }
+          if (nodePropertyIcon) {
+            createNodePropertyIcon(elementView);
+          }
         });
       }
     }
@@ -1305,10 +2763,34 @@
   paper.on('blank:pointerclick', function() {
     hoveredElement = null;
     removeNodeDeleteIcon();
+    removeNodePropertyIcon();
+    hidePropertyPanel();
   });
 
-  // 监听键盘事件，按Delete或Backspace键删除选中的节点
+  // 监听键盘事件，按Delete或Backspace键删除选中的节点，按ESC键关闭属性面板
   document.addEventListener('keydown', function(evt) {
+    // 如果已经在平移模式，不处理其他键盘事件
+    if (isPanningMode) {
+      return;
+    }
+
+    // ESC键关闭属性面板
+    if (evt.key === 'Escape') {
+      hidePropertyPanel();
+      return;
+    }
+
+    // 检查当前焦点是否在输入框或文本区域上，如果是则不执行节点删除操作
+    const activeElement = document.activeElement;
+    const isInputField = activeElement.tagName === 'INPUT' ||
+                         activeElement.tagName === 'TEXTAREA' ||
+                         activeElement.isContentEditable;
+
+    // 如果焦点在输入字段上，不执行删除节点操作
+    if (isInputField) {
+      return;
+    }
+
     if ((evt.key === 'Delete' || evt.key === 'Backspace') && hoveredElement) {
       console.log('键盘删除节点:', hoveredElement.id, hoveredElement.get('type'));
 
@@ -1344,8 +2826,12 @@
         }
       }
 
+      // 确保移除resize句柄和图标
+      removeResizeHandles();
       hoveredElement = null;
       removeNodeDeleteIcon();
+      removeNodePropertyIcon();
+      hidePropertyPanel();
     }
   });
 
@@ -1448,6 +2934,14 @@
 
       // 延迟执行，再次确保连接线可见
       setTimeout(() => {
+        // 再次确保嵌套节点在容器上方
+        if (embeddedElements.length > 0) {
+          embeddedElements.forEach(embed => {
+            embed.toFront();
+          });
+        }
+
+        // 最后将连接线移到最前面
         if (relatedLinks.length > 0) {
           relatedLinks.forEach(link => {
             link.toFront();
@@ -1465,9 +2959,12 @@
             createResizeHandles(cellView);
           }
 
-          // 更新删除图标
+          // 更新图标
           if (nodeDeleteIcon) {
             createNodeDeleteIcon(cellView);
+          }
+          if (nodePropertyIcon) {
+            createNodePropertyIcon(cellView);
           }
         }
       }
@@ -1570,3 +3067,78 @@
     }
   });
 
+  // 监听节点删除事件，确保清理resize句柄和图标
+  graph.on('remove', function(cell) {
+    // 如果删除的是容器节点，确保移除resize句柄
+    if (cell.isContainer && cell.isResizable) {
+      // 移除resize句柄
+      removeResizeHandles();
+    }
+
+    // 如果删除的是当前悬停的节点，清除引用并移除图标
+    if (hoveredElement === cell) {
+      hoveredElement = null;
+      removeNodeDeleteIcon();
+      removeNodePropertyIcon();
+    }
+
+    // 如果删除的是当前正在编辑属性的节点，隐藏属性面板
+    if (currentEditingNode === cell) {
+      hidePropertyPanel();
+    }
+  });
+
+  // 监听连接线创建事件
+  paper.on('link:connect', function(linkView) {
+    const link = linkView.model;
+    console.log('连接线已创建:', link.id);
+
+    // 检查源节点是否是 Switch 节点
+    const sourceCell = link.getSourceCell();
+    if (sourceCell && sourceCell.isSwitch) {
+      // 获取源端口
+      const sourcePort = link.getSourcePort();
+      if (sourcePort) {
+        // 从端口 ID 中提取 case 索引
+        const caseIndexMatch = sourcePort.match(/case_(\d+)/);
+        if (caseIndexMatch && caseIndexMatch[1]) {
+          const caseIndex = parseInt(caseIndexMatch[1]);
+
+          // 获取 case 名称
+          const cases = sourceCell.prop('properties').cases || [];
+          if (cases[caseIndex]) {
+            const caseName = cases[caseIndex].name;
+
+            // 在连接线上添加标签
+            link.appendLabel({
+              attrs: {
+                text: {
+                  text: caseName,
+                  fill: '#333',
+                  fontSize: 12,
+                  fontWeight: 'bold',
+                  textAnchor: 'middle',
+                  textVerticalAnchor: 'middle',
+                  pointerEvents: 'none'
+                },
+                rect: {
+                  fill: 'white',
+                  stroke: '#ccc',
+                  strokeWidth: 1,
+                  rx: 3,
+                  ry: 3,
+                  refWidth: '100%',
+                  refHeight: '100%',
+                  refX: 0,
+                  refY: 0
+                }
+              },
+              position: {
+                distance: 0.5 // 在连接线中间位置
+              }
+            });
+          }
+        }
+      }
+    }
+  });

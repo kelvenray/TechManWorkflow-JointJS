@@ -1,12 +1,111 @@
 <!DOCTYPE html>
-<html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TechManWorkflow-JointJS</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jointjs/dist/joint.min.css">
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+        }
+        #paper-container {
+            position: absolute;
+            top: 0;
+            left: 140px; /* Account for the left sidebar width */
+            right: 0;
+            bottom: 0;
+            overflow: hidden;
+            background-color: #f8f9fa;
+        }
+        /* 平移模式指示器样式 */
+        .panning-mode-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-family: Arial, sans-serif;
+            font-size: 14px;
+            z-index: 10000;
+            display: none;
+            pointer-events: none;
+        }
+        /* 鼠标指针样式 */
+        .panning-cursor {
+            cursor: grab !important;
+        }
+        .panning-cursor:active {
+            cursor: grabbing !important;
+        }
+
+        /* 小地图样式 */
+        #minimap-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 220px;
+            height: 180px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            overflow: hidden;
+            transition: opacity 0.3s ease;
+        }
+
+        #minimap-container:hover {
+            opacity: 1 !important;
+        }
+
+        /* 小地图视口指示器 */
+        .minimap-viewport {
+            position: absolute;
+            border: 2px solid rgba(25, 118, 210, 0.7);
+            background-color: rgba(25, 118, 210, 0.1);
+            z-index: 1001;
+            cursor: move;
+            pointer-events: all;
+            transition: border-color 0.2s ease;
+        }
+
+        .minimap-viewport:hover {
+            border-color: rgba(25, 118, 210, 0.9);
+            background-color: rgba(25, 118, 210, 0.15);
+        }
+
+        /* 小地图标题 */
+        .minimap-title {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(240, 240, 240, 0.8);
+            color: #666;
+            font-size: 11px;
+            padding: 2px 6px;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+            z-index: 1002;
+            pointer-events: none;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+        }
+    </style>
 </head>
 <body>
-    <div id="paper-container" style="width:100vw;height:100vh;"></div>
+    <div id="paper-container"></div>
+    <div class="panning-mode-indicator">画布平移模式</div>
+    <div id="minimap-container"></div>
     <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/underscore@1.13.6/underscore-min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/backbone@1.4.1/backbone-min.js"></script>
