@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TechManWorkflow-JointJS</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jointjs/dist/joint.min.css">
+    <link rel="stylesheet" href="js/lib/jointjs-3.7.7.min.css">
     <style>
         html, body {
             margin: 0;
@@ -12,50 +12,7 @@
             overflow: hidden;
             width: 100%;
             height: 100%;
-        }
-        /* 左侧面板样式 */
-        #sidebar {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 140px;
-            height: 100%;
-            background-color: #f0f0f0;
-            border-right: 1px solid #ddd;
-            overflow-y: auto;
-            z-index: 100;
-        }
-
-        .sidebar-header {
-            padding: 10px;
-            background-color: #e0e0e0;
-            border-bottom: 1px solid #ccc;
-        }
-
-        .sidebar-header h3 {
-            margin: 0;
-            font-size: 16px;
-            color: #333;
-        }
-
-        .node-types {
-            padding: 10px;
-        }
-
-        .node-type {
-            margin-bottom: 10px;
-            padding: 8px;
-            background-color: white;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            text-align: center;
-            cursor: grab;
-            transition: all 0.2s ease;
-        }
-
-        .node-type:hover {
-            background-color: #f8f8f8;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
         }
 
         /* 主画布容器样式 */
@@ -68,6 +25,7 @@
             overflow: hidden;
             background-color: #f8f9fa;
         }
+
         /* 平移模式指示器样式 */
         .panning-mode-indicator {
             position: fixed;
@@ -83,6 +41,7 @@
             display: none;
             pointer-events: none;
         }
+
         /* 鼠标指针样式 */
         .panning-cursor {
             cursor: grab !important;
@@ -141,9 +100,6 @@
             border-bottom: 1px solid #ddd;
             z-index: 1002;
             pointer-events: none;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
             user-select: none;
         }
 
@@ -198,9 +154,6 @@
             color: #555;
             width: 50px;
             text-align: center;
-            -webkit-user-select: none;
-            -moz-user-select: none;
-            -ms-user-select: none;
             user-select: none;
             cursor: pointer;
             padding: 4px 6px;
@@ -252,27 +205,48 @@
                 width: 40px;
             }
         }
+
+        /* 加载指示器 */
+        .loading-indicator {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            z-index: 10001;
+            text-align: center;
+            font-size: 16px;
+            color: #333;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
-    <!-- 左侧面板 -->
-    <div id="sidebar">
-        <div class="sidebar-header">
-            <h3>节点类型</h3>
-        </div>
-        <div class="node-types">
-            <div class="node-type" data-type="start">开始</div>
-            <div class="node-type" data-type="end">结束</div>
-            <div class="node-type" data-type="process">Grouping</div>
-            <div class="node-type" data-type="decision">判断</div>
-            <div class="node-type" data-type="switch">Switch</div>
-            <div class="node-type" data-type="container">容器</div>
-        </div>
-    </div>
-
     <!-- 主画布容器 -->
     <div id="paper-container"></div>
+
+    <!-- 平移模式指示器 -->
     <div class="panning-mode-indicator">画布平移模式</div>
+
+    <!-- 小地图容器 -->
     <div id="minimap-container"></div>
 
     <!-- 缩放控制工具栏 -->
@@ -294,10 +268,46 @@
             </svg>
         </button>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/underscore@1.13.6/underscore-min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/backbone@1.4.1/backbone-min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/jointjs@3.7.7/dist/joint.min.js"></script>
-    <script src="main.js"></script>
+
+    <!-- 加载指示器 -->
+    <div class="loading-indicator" id="loading-indicator">
+        <div class="loading-spinner"></div>
+        正在初始化工作流设计器...
+    </div>
+
+    <!-- JointJS依赖库 (本地化) -->
+    <script src="js/lib/jquery-3.7.1.min.js"></script>
+    <script src="js/lib/underscore-1.13.6.min.js"></script>
+    <script src="js/lib/backbone-1.4.1.min.js"></script>
+    <script src="js/lib/jointjs-3.7.7.min.js"></script>
+
+    <!-- 应用模块 -->
+    <script src="js/core/constants.js"></script>
+    <script src="js/utils/helpers.js"></script>
+    <script src="js/core/graph.js"></script>
+    <script src="js/features/node-manager.js"></script>
+    <script src="js/components/sidebar.js"></script>
+    <script src="js/components/minimap.js"></script>
+    <script src="js/components/zoom-toolbar.js"></script>
+    <script src="js/components/property-panel.js"></script>
+
+    <!-- 主应用入口 -->
+    <script src="js/main.js"></script>
+
+    <script>
+        // 应用加载完成后隐藏加载指示器
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(() => {
+                const loadingIndicator = document.getElementById('loading-indicator');
+                if (loadingIndicator) {
+                    loadingIndicator.style.opacity = '0';
+                    loadingIndicator.style.transition = 'opacity 0.5s ease';
+                    setTimeout(() => {
+                        loadingIndicator.style.display = 'none';
+                    }, 500);
+                }
+            }, 1000);
+        });
+    </script>
 </body>
 </html>

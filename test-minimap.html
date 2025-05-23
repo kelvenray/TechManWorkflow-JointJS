@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小地图测试</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.6.2/joint.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        #container {
+            display: flex;
+            gap: 20px;
+        }
+        
+        #paper-container {
+            width: 800px;
+            height: 600px;
+            border: 1px solid #ccc;
+            background: white;
+            position: relative;
+        }
+        
+        #minimap-container {
+            width: 250px;
+            height: 200px;
+            border: 1px solid #ccc;
+            background: white;
+            position: relative;
+        }
+        
+        .minimap-title {
+            padding: 5px 10px;
+            background: #f0f0f0;
+            border-bottom: 1px solid #ddd;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .minimap-viewport {
+            border: 2px solid rgba(25, 118, 210, 0.7);
+            background-color: rgba(25, 118, 210, 0.1);
+            position: absolute;
+            z-index: 1001;
+            cursor: move;
+            pointer-events: all;
+        }
+        
+        #controls {
+            margin-top: 20px;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #1565c0;
+        }
+    </style>
+</head>
+<body>
+    <h1>小地图功能测试</h1>
+    
+    <div id="container">
+        <div id="paper-container"></div>
+        <div id="minimap-container"></div>
+    </div>
+    
+    <div id="controls">
+        <button onclick="addTestNodes()">添加测试节点</button>
+        <button onclick="clearGraph()">清空画布</button>
+        <button onclick="zoomIn()">放大</button>
+        <button onclick="zoomOut()">缩小</button>
+    </div>
+
+    <script>
+        // 错误处理器
+        class ErrorHandler {
+            static handle(error, context) {
+                console.error(`[${context}] 错误:`, error);
+            }
+        }
+
+        // 事件管理器
+        class EventManager {
+            constructor() {
+                this.listeners = [];
+            }
+            
+            addEventListener(element, event, handler) {
+                if (!element || !event || !handler) {
+                    console.warn('EventManager: Invalid arguments for addEventListener');
+                    return;
+                }
+                element.addEventListener(event, handler);
+                this.listeners.push({ element, event, handler });
+            }
+            
+            removeAllListeners() {
+                this.listeners.forEach(({ element, event, handler }) => {
+                    element.removeEventListener(event, handler);
+                });
+                this.listeners = [];
+            }
+        }
+
+        // 简化的小地图类
+        class TestMinimap {
+            constructor() {
+                this.container = null;
+                this.paper = null;
+                this.graph = null;
+                this.viewportRect = null;
+                this.scale = 0.1;
+                this.eventManager = new EventManager();
+                this.mainGraph = null;
+                this.mainPaper = null;
+            }
+
+            init(mainGraph, mainPaper) {
+                this.mainGraph = mainGraph;
+                this.mainPaper = mainPaper;
+                
+                this.container = document.getElementById('minimap-container');
+                if (!this.container) {
+                    console.warn('小地图容器未找到');
+                    return;
+                }
+
+                this.setupMinimap();
+                this.bindEvents();
+                this.updateMinimap();
+                
+                console.log('小地图初始化完成');
+            }
+
+            setupMinimap() {
+                this.container.innerHTML = '';
+
+                const title = document.createElement('div');
+                title.className = 'minimap-title';
+                title.textContent = '缩略图';
+                this.container.appendChild(title);
+
+                const minimapSvg = document.createElement('div');
+                minimapSvg.style.cssText = `
+                    width: 100%;
+                    height: calc(100% - 20px);
+                    position: relative;
+                    overflow: hidden;
+                `;
+                this.container.appendChild(minimapSvg);
+
+                this.graph = new joint.dia.Graph();
+                this.paper = new joint.dia.Paper({
+                    el: minimapSvg,
+                    model: this.graph,
+                    width: 230,
+                    height: 160,
+                    interactive: false,
+                    background: { color: '#f8f9fa' },
+                    gridSize: 1,
+                    drawGrid: false
+                });
+
+                this.createViewportIndicator();
+            }
+
+            createViewportIndicator() {
+                this.viewportRect = document.createElement('div');
+                this.viewportRect.className = 'minimap-viewport';
+                this.container.appendChild(this.viewportRect);
+            }
+
+            bindEvents() {
+                if (this.mainGraph) {
+                    this.mainGraph.on('add remove change:position change:size', () => {
+                        this.updateMinimap();
+                    });
+                }
+
+                if (this.mainPaper) {
+                    this.mainPaper.on('scale translate', () => {
+                        this.updateViewport();
+                    });
+                }
+            }
+
+            updateMinimap() {
+                if (!this.mainGraph || !this.graph) return;
+
+                try {
+                    this.graph.clear();
+
+                    const elements = this.mainGraph.getElements();
+                    const links = this.mainGraph.getLinks();
+
+                    this.calculateScale(elements);
+
+                    elements.forEach(element => {
+                        this.addElementToMinimap(element);
+                    });
+
+                    links.forEach(link => {
+                        this.addLinkToMinimap(link);
+                    });
+
+                    this.updateViewport();
+
+                } catch (error) {
+                    ErrorHandler.handle(error, '更新小地图');
+                }
+            }
+
+            calculateScale(elements) {
+                if (elements.length === 0) return;
+
+                let minX = Infinity, minY = Infinity;
+                let maxX = -Infinity, maxY = -Infinity;
+
+                elements.forEach(element => {
+                    const bbox = element.getBBox();
+                    minX = Math.min(minX, bbox.x);
+                    minY = Math.min(minY, bbox.y);
+                    maxX = Math.max(maxX, bbox.x + bbox.width);
+                    maxY = Math.max(maxY, bbox.y + bbox.height);
+                });
+
+                const contentWidth = maxX - minX;
+                const contentHeight = maxY - minY;
+
+                const scaleX = 200 / contentWidth;
+                const scaleY = 140 / contentHeight;
+                this.scale = Math.min(scaleX, scaleY, 0.2);
+            }
+
+            addElementToMinimap(element) {
+                try {
+                    const bbox = element.getBBox();
+                    const elementType = element.get('type');
+                    const elementAttrs = element.get('attrs') || {};
+                    
+                    let minimapElement;
+                    
+                    if (elementType === 'standard.Rectangle') {
+                        minimapElement = new joint.shapes.standard.Rectangle({
+                            position: { x: bbox.x * this.scale, y: bbox.y * this.scale },
+                            size: { width: bbox.width * this.scale, height: bbox.height * this.scale },
+                            attrs: {
+                                body: {
+                                    fill: elementAttrs.body?.fill || '#f0f0f0',
+                                    stroke: elementAttrs.body?.stroke || '#333',
+                                    strokeWidth: Math.max(1, (elementAttrs.body?.strokeWidth || 1) * this.scale)
+                                }
+                            }
+                        });
+                    } else if (elementType === 'standard.Circle') {
+                        minimapElement = new joint.shapes.standard.Circle({
+                            position: { x: bbox.x * this.scale, y: bbox.y * this.scale },
+                            size: { width: bbox.width * this.scale, height: bbox.height * this.scale },
+                            attrs: {
+                                body: {
+                                    fill: elementAttrs.body?.fill || '#f0f0f0',
+                                    stroke: elementAttrs.body?.stroke || '#333',
+                                    strokeWidth: Math.max(1, (elementAttrs.body?.strokeWidth || 1) * this.scale)
+                                }
+                            }
+                        });
+                    } else {
+                        minimapElement = new joint.shapes.standard.Rectangle({
+                            position: { x: bbox.x * this.scale, y: bbox.y * this.scale },
+                            size: { width: bbox.width * this.scale, height: bbox.height * this.scale },
+                            attrs: {
+                                body: {
+                                    fill: '#e0e0e0',
+                                    stroke: '#666',
+                                    strokeWidth: Math.max(1, 1 * this.scale)
+                                }
+                            }
+                        });
+                    }
+
+                    if (this.graph && minimapElement) {
+                        this.graph.addCell(minimapElement);
+                    }
+                    
+                } catch (error) {
+                    console.warn('添加元素到小地图失败:', error);
+                }
+            }
+
+            addLinkToMinimap(link) {
+                try {
+                    const source = link.get('source');
+                    const target = link.get('target');
+                    
+                    const minimapLink = new joint.shapes.standard.Link({
+                        source: source,
+                        target: target,
+                        attrs: {
+                            line: {
+                                stroke: link.attr('line/stroke') || '#666',
+                                strokeWidth: Math.max(1, (link.attr('line/strokeWidth') || 2) * this.scale * 0.5),
+                                targetMarker: { display: 'none' },
+                                sourceMarker: { display: 'none' }
+                            }
+                        }
+                    });
+
+                    if (this.graph) {
+                        this.graph.addCell(minimapLink);
+                    }
+                    
+                } catch (error) {
+                    console.warn('添加连接线到小地图失败:', error);
+                }
+            }
+
+            updateViewport() {
+                if (!this.mainPaper || !this.viewportRect) return;
+
+                try {
+                    const paperEl = this.mainPaper.el;
+                    const transform = this.mainPaper.matrix();
+                    
+                    const viewportWidth = paperEl.clientWidth;
+                    const viewportHeight = paperEl.clientHeight;
+                    
+                    const minimapViewportWidth = viewportWidth * this.scale / transform.a;
+                    const minimapViewportHeight = viewportHeight * this.scale / transform.d;
+                    const minimapViewportX = -transform.e * this.scale / transform.a;
+                    const minimapViewportY = -transform.f * this.scale / transform.d;
+                    
+                    this.viewportRect.style.left = `${minimapViewportX + 10}px`;
+                    this.viewportRect.style.top = `${minimapViewportY + 30}px`;
+                    this.viewportRect.style.width = `${minimapViewportWidth}px`;
+                    this.viewportRect.style.height = `${minimapViewportHeight}px`;
+
+                } catch (error) {
+                    ErrorHandler.handle(error, '更新视口');
+                }
+            }
+        }
+
+        // 全局变量
+        let graph, paper, minimap;
+
+        // 初始化
+        function init() {
+            graph = new joint.dia.Graph();
+            paper = new joint.dia.Paper({
+                el: document.getElementById('paper-container'),
+                model: graph,
+                width: 800,
+                height: 600,
+                gridSize: 10,
+                drawGrid: true,
+                background: { color: '#ffffff' }
+            });
+
+            minimap = new TestMinimap();
+            minimap.init(graph, paper);
+
+            console.log('测试页面初始化完成');
+        }
+
+        // 添加测试节点
+        function addTestNodes() {
+            // 添加一些测试节点
+            const rect1 = new joint.shapes.standard.Rectangle({
+                position: { x: 100, y: 100 },
+                size: { width: 80, height: 60 },
+                attrs: {
+                    body: { fill: '#ff6b6b', stroke: '#333' },
+                    label: { text: '节点1', fill: 'white' }
+                }
+            });
+
+            const circle1 = new joint.shapes.standard.Circle({
+                position: { x: 300, y: 150 },
+                size: { width: 60, height: 60 },
+                attrs: {
+                    body: { fill: '#4ecdc4', stroke: '#333' },
+                    label: { text: '节点2', fill: 'white' }
+                }
+            });
+
+            const rect2 = new joint.shapes.standard.Rectangle({
+                position: { x: 500, y: 200 },
+                size: { width: 100, height: 80 },
+                attrs: {
+                    body: { fill: '#45b7d1', stroke: '#333' },
+                    label: { text: '节点3', fill: 'white' }
+                }
+            });
+
+            graph.addCells([rect1, circle1, rect2]);
+
+            // 添加连接线
+            const link1 = new joint.shapes.standard.Link({
+                source: { id: rect1.id },
+                target: { id: circle1.id },
+                attrs: {
+                    line: { stroke: '#333', strokeWidth: 2 }
+                }
+            });
+
+            const link2 = new joint.shapes.standard.Link({
+                source: { id: circle1.id },
+                target: { id: rect2.id },
+                attrs: {
+                    line: { stroke: '#333', strokeWidth: 2 }
+                }
+            });
+
+            graph.addCells([link1, link2]);
+        }
+
+        // 清空画布
+        function clearGraph() {
+            graph.clear();
+        }
+
+        // 放大
+        function zoomIn() {
+            const currentScale = paper.scale();
+            paper.scale(currentScale.sx * 1.2, currentScale.sy * 1.2);
+        }
+
+        // 缩小
+        function zoomOut() {
+            const currentScale = paper.scale();
+            paper.scale(currentScale.sx * 0.8, currentScale.sy * 0.8);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
