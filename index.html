@@ -237,6 +237,28 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
+
+        /* 容器拖拽高亮效果 */
+        .container-drag-highlight {
+            stroke: #ff6b6b !important;
+            stroke-width: 2 !important;
+            filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.5)) !important;
+            transition: all 0.2s ease !important;
+        }
+
+        /* 拖拽状态下的光标 */
+        .dragging-cursor {
+            cursor: grabbing !important;
+        }
+
+        /* 容器节点悬停效果增强 */
+        .container-hover-effect {
+            transition: all 0.2s ease;
+        }
+
+        .container-hover-effect:hover {
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+        }
     </style>
 </head>
 <body>

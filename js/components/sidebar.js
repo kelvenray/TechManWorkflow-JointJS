@@ -223,14 +223,18 @@ class Sidebar {
       }
     });
 
-    // 全局拖拽移动 - 使用防抖处理
-    const debouncedDragMove = debounce((/** @type {MouseEvent} */ e) => {
+    // 全局拖拽移动 - 使用requestAnimationFrame和节流处理
+    // 使用节流而不是防抖，以获得更平滑的拖拽体验
+    const throttledDragMove = throttle((/** @type {MouseEvent} */ e) => {
       if (this.isDragging) {
-        this.handleDrag(e);
+        // 使用requestAnimationFrame确保视觉更新与浏览器渲染周期同步
+        requestAnimationFrame(() => {
+          this.handleDrag(e);
+        });
       }
-    }, CONFIG.ui.mouseMoveDebounceDelay, false, true);
+    }, CONFIG.ui.dragThrottleDelay || 5); // 使用更短的节流延迟，如果未配置则默认为5ms
 
-    this.eventManager.addEventListener(document, 'mousemove', debouncedDragMove);
+    this.eventManager.addEventListener(document, 'mousemove', throttledDragMove);
 
     // 全局拖拽结束
     this.eventManager.addEventListener(document, 'mouseup', (/** @type {MouseEvent} */ e) => {
@@ -293,8 +297,13 @@ class Sidebar {
     preview.style.opacity = '0.8';
     preview.style.transform = 'scale(0.9)';
     preview.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
+    preview.style.willChange = 'transform'; // 提示浏览器这个元素会频繁变化，优化渲染性能
+    preview.style.transition = 'none'; // 确保没有过渡动画影响拖拽流畅度
 
     document.body.appendChild(preview);
+
+    // 存储预览元素的引用，避免后续重复查询DOM
+    this.dragPreviewElement = preview;
 
     // 初始位置
     this.updateDragPreviewPosition(e);
@@ -305,21 +314,39 @@ class Sidebar {
    * @param {MouseEvent} e
    */
   handleDrag(e) {
+    // 更新拖拽预览位置
     this.updateDragPreviewPosition(e);
 
-    // 检查是否在画布区域
-    const paperContainer = document.getElementById('paper-container');
-    if (paperContainer) {
-      const rect = paperContainer.getBoundingClientRect();
-      const isOverCanvas = e.clientX >= rect.left &&
-                          e.clientX <= rect.right &&
-                          e.clientY >= rect.top &&
-                          e.clientY <= rect.bottom;
+    // 只在必要时检查是否在画布区域上方（减少频率）
+    // 使用节流检查，不需要每次鼠标移动都检查
+    if (!this.lastCheckTime || Date.now() - this.lastCheckTime > 100) {
+      this.lastCheckTime = Date.now();
 
-      // 更新预览样式
-      const preview = document.getElementById('drag-preview');
-      if (preview) {
-        preview.style.borderColor = isOverCanvas ? '#4caf50' : '#f44336';
+      // 缓存画布容器引用
+      if (!this.paperContainerRect) {
+        const paperContainer = document.getElementById('paper-container');
+        if (paperContainer) {
+          this.paperContainerRect = paperContainer.getBoundingClientRect();
+        }
+      }
+
+      if (this.paperContainerRect) {
+        const rect = this.paperContainerRect;
+        const isOverCanvas = e.clientX >= rect.left &&
+                            e.clientX <= rect.right &&
+                            e.clientY >= rect.top &&
+                            e.clientY <= rect.bottom;
+
+        // 只有当状态改变时才更新样式
+        if (this.isOverCanvas !== isOverCanvas) {
+          this.isOverCanvas = isOverCanvas;
+
+          // 更新预览样式
+          const preview = this.dragPreviewElement;
+          if (preview) {
+            preview.style.borderColor = isOverCanvas ? '#4caf50' : '#f44336';
+          }
+        }
       }
     }
   }
@@ -329,10 +356,16 @@ class Sidebar {
    * @param {MouseEvent} e
    */
   updateDragPreviewPosition(e) {
-    const preview = document.getElementById('drag-preview');
+    // 使用缓存的引用而不是每次都查询DOM
+    const preview = this.dragPreviewElement || document.getElementById('drag-preview');
     if (preview) {
-      preview.style.left = (e.clientX - 60) + 'px';
-      preview.style.top = (e.clientY - 20) + 'px';
+      // 使用transform而不是left/top，这样可以避免重排(reflow)，提高性能
+      const x = e.clientX - 60;
+      const y = e.clientY - 20;
+      preview.style.transform = `translate3d(${x}px, ${y}px, 0) scale(0.9)`;
+
+      // 缓存引用以备后用
+      this.dragPreviewElement = preview;
     }
   }
 
@@ -377,7 +410,7 @@ class Sidebar {
       }
 
       // 清理拖拽预览
-      const preview = document.getElementById('drag-preview');
+      const preview = this.dragPreviewElement || document.getElementById('drag-preview');
       if (preview) {
         preview.remove();
       }
@@ -386,6 +419,12 @@ class Sidebar {
       this.isDragging = false;
       this.app.state.dragType = null;
       this.app.state.draggedElement = null;
+
+      // 清理缓存的引用
+      this.dragPreviewElement = null;
+      this.paperContainerRect = null;
+      this.lastCheckTime = null;
+      this.isOverCanvas = null;
 
       console.log('拖拽状态已重置');
     }
@@ -398,38 +437,49 @@ class Sidebar {
    */
   createNodeAtPosition(e, canvasRect) {
     const nodeType = this.app.state.dragType;
-    // ts(12741a46)
     if (!nodeType) {
       console.warn('No nodeType specified for drop operation');
-      this.cleanupDragState(); // Ensure state is cleaned up
+      this.cleanupDragState();
       return;
     }
 
-    // Revert to using this.app.paper, ts(82881d77)
-    const paper = this.app.paper;
-    // if (!(paper instanceof SVGElement)) { // This check might be needed if paper type is broad
-    //   console.error('Paper is not an SVGElement');
-    //   return;
-    // }
-
-    // 转换坐标到SVG坐标系
-    const x = e.clientX - canvasRect.left;
-    const y = e.clientY - canvasRect.top;
-    const svgCoord = CoordinateUtils.screenToSvg(paper, x, y);
-
     try {
-      // 创建节点
-      const node = this.nodeManager.createNode(nodeType, svgCoord.x, svgCoord.y);
+      // 计算相对于画布的坐标
+      const x = e.clientX - canvasRect.left;
+      const y = e.clientY - canvasRect.top;
+      
+      console.log('拖拽释放位置:', { clientX: e.clientX, clientY: e.clientY, canvasX: x, canvasY: y });
+
+      // 转换坐标到SVG坐标系
+      let svgCoord;
+      try {
+        svgCoord = CoordinateUtils.screenToSvg(this.app.paper, x, y);
+        console.log('SVG坐标:', svgCoord);
+      } catch (coordError) {
+        console.warn('坐标转换失败，使用直接坐标:', coordError);
+        // 如果坐标转换失败，使用相对坐标
+        svgCoord = { x: x, y: y };
+      }
+
+      // 创建节点 - 添加stencil选项以标识来源
+      const node = this.nodeManager.createNode(nodeType, svgCoord.x, svgCoord.y, { stencil: true });
 
       if (node) {
-        console.log('成功创建' + nodeType + '节点:', node.id);
-        // ts(9abcfde8)
-        // @ts-ignore
-        this.app.eventManager.emit('nodeDropped', { node: node, event: e });
+        console.log('成功创建' + nodeType + '节点:', node.id, '位置:', node.position());
+        
+        // 确保节点可见
+        setTimeout(() => {
+          node.toFront();
+          console.log('节点已移到前台:', node.id);
+        }, 10);
 
+        // 发送节点创建事件
+        this.app.eventManager.emit('nodeDropped', { node: node, event: e });
+      } else {
+        console.error('节点创建失败 - nodeManager.createNode返回null');
       }
     } catch (error) {
-      // ts(f0e82c5b)
+      console.error('创建节点时发生错误:', error);
       if (error instanceof Error) {
         ErrorHandler.handle(error, '创建节点失败');
       } else {
@@ -443,7 +493,7 @@ class Sidebar {
    */
   cleanupDragState() {
     // 移除拖拽预览
-    const preview = document.getElementById('drag-preview');
+    const preview = this.dragPreviewElement || document.getElementById('drag-preview');
     if (preview) {
       DOMUtils.safeRemove(preview);
     }
@@ -459,6 +509,12 @@ class Sidebar {
       originalItem.style.transform = 'translateX(0)';
       this.app.state.draggedElement = null;
     }
+
+    // 清理缓存的引用
+    this.dragPreviewElement = null;
+    this.paperContainerRect = null;
+    this.lastCheckTime = null;
+    this.isOverCanvas = null;
   }
 
   /**

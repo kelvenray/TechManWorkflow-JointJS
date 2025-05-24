@@ -37,9 +37,10 @@ const CONFIG = {
     minimapSize: { width: 220, height: 180 },
     minimapScale: 0.15,
     iconSize: 16,
-    resizeHandleSize: 8,
+    resizeHandleSize: 12,
     debounceDelay: 20, // 一般防抖延迟，适用于大多数事件
     mouseMoveDebounceDelay: 10, // 鼠标移动事件的特定延迟（较短以保持良好的用户体验）
+    dragThrottleDelay: 5, // 拖拽操作的节流延迟（非常短以确保平滑的拖拽体验）
     hideIconDelay: 300
   },
   ports: {

@@ -22,6 +22,7 @@ class NodeManager {
    * @returns {joint.shapes.Element} 创建的节点
    */
   createNode(type, x, y, options = {}) {
+    console.log('[createNode] *** 开始创建节点 ***', type, 'at', x, y);
     let node = null;
 
     try {
@@ -49,15 +50,20 @@ class NodeManager {
       }
 
       if (node) {
+        console.log(`[createNode] 节点创建后 isContainer 值:`, node.isContainer);
+
         // 添加端口（除了容器节点外）
         this.addNodePorts(node, type);
-        
+        console.log(`[createNode] 添加端口后 isContainer 值:`, node.isContainer);
+
         // 添加到图形
         node.addTo(this.graph);
-        
+        console.log(`[createNode] 添加到图形后 isContainer 值:`, node.isContainer);
+
         // 检查容器嵌套
         this.checkContainerEmbedding(node);
-        
+        console.log(`[createNode] 检查嵌套后 isContainer 值:`, node.isContainer);
+
         console.log(`创建${type}节点成功:`, node.id);
       }
 
@@ -95,9 +101,12 @@ class NodeManager {
       }
     });
 
+    // 标记为非容器节点
+    node.isContainer = false;
+
     // 设置z-index确保可见性
     node.set('z', 10);
-    
+
     return node;
   }
 
@@ -127,9 +136,12 @@ class NodeManager {
       }
     });
 
+    // 标记为非容器节点
+    node.isContainer = false;
+
     // 设置z-index确保可见性
     node.set('z', 10);
-    
+
     return node;
   }
 
@@ -171,9 +183,13 @@ class NodeManager {
       categoryValue: ''
     });
 
+    // 标记为非容器节点
+    node.isContainer = false;
+    console.log('[createProcessNode] 设置 isContainer = false，当前值:', node.isContainer);
+
     // 设置z-index确保可见性
     node.set('z', 5);
-    
+
     return node;
   }
 
@@ -211,9 +227,12 @@ class NodeManager {
       condition: ''
     });
 
+    // 标记为非容器节点
+    node.isContainer = false;
+
     // 设置z-index确保可见性
     node.set('z', 5);
-    
+
     return node;
   }
 
@@ -257,12 +276,13 @@ class NodeManager {
       cases: defaultCases
     });
 
-    // 标记为Switch节点
+    // 标记为Switch节点和非容器节点
     node.isSwitch = true;
+    node.isContainer = false;
 
     // 设置z-index确保可见性
     node.set('z', 5);
-    
+
     return node;
   }
 
@@ -355,7 +375,7 @@ class NodeManager {
     for (let i = 0; i < casesCount; i++) {
       const portId = `case_${i}`;
       console.log(`添加端口 ${portId} 对应 Case: ${cases[i].name}`);
-      
+
       node.addPort({
         id: portId,
         group: 'switchPorts',
@@ -399,7 +419,7 @@ class NodeManager {
       for (let i = 0; i < casesCount; i++) {
         const portId = `case_${i}`;
         console.log(`添加端口 ${portId} 对应 Case: ${cases[i].name}`);
-        
+
         node.addPort({
           id: portId,
           group: 'switchPorts',
@@ -461,12 +481,12 @@ class NodeManager {
    */
   checkContainerEmbedding(node) {
     const containers = this.graph.getElements().filter(e => e.isContainer);
-    
+
     for (const container of containers) {
       const bbox = container.getBBox();
       const nodeBBox = node.getBBox();
       const center = nodeBBox.center();
-      
+
       if (CoordinateUtils.isPointInRect(center, bbox)) {
         // 开始和结束节点不能被嵌套
         if (this.isStartOrEndNode(node)) {
@@ -478,11 +498,11 @@ class NodeManager {
           node.toFront();
           container.embed(node);
           this.adjustNodeInContainer(node, container);
-          
+
           setTimeout(() => {
             node.toFront();
           }, 50);
-          
+
           break;
         }
       }
@@ -495,7 +515,7 @@ class NodeManager {
   isStartOrEndNode(node) {
     const nodeType = node.get('type');
     const nodeLabel = node.attr('label/text');
-    return nodeType === 'standard.Circle' && 
+    return nodeType === 'standard.Circle' &&
            (nodeLabel === '开始' || nodeLabel === '结束');
   }
 
@@ -505,12 +525,12 @@ class NodeManager {
   adjustNodeInContainer(node, container) {
     const bbox = container.getBBox();
     const nodeBBox = node.getBBox();
-    
+
     const minX = bbox.x + 10;
     const maxX = bbox.x + bbox.width - nodeBBox.width - 10;
     const minY = bbox.y + 30;
     const maxY = bbox.y + bbox.height - nodeBBox.height - 10;
-    
+
     node.position(
       Math.max(minX, Math.min(nodeBBox.x, maxX)),
       Math.max(minY, Math.min(nodeBBox.y, maxY))
@@ -545,15 +565,15 @@ class NodeManager {
    */
   clearNodeFromAppState(node) {
     const state = this.app.state;
-    
+
     if (state.hoveredElement === node) {
       state.hoveredElement = null;
     }
-    
+
     if (state.currentEditingNode === node) {
       state.currentEditingNode = null;
     }
-    
+
     if (state.resizingContainer === node) {
       state.resizingContainer = null;
     }
@@ -645,13 +665,13 @@ class NodeManager {
     try {
       const clonedNode = node.clone();
       const position = node.position();
-      
+
       clonedNode.position(position.x + offsetX, position.y + offsetY);
       clonedNode.addTo(this.graph);
-      
+
       console.log('节点克隆成功:', clonedNode.id);
       return clonedNode;
-      
+
     } catch (error) {
       ErrorHandler.handle(error, '节点克隆');
       return null;
