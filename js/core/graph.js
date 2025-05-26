@@ -799,7 +799,7 @@ class WorkflowApp {
               element.toFront();
             }, 50);
 
-    
+
             wasEmbedded = true;
           } catch (error) {
             console.error(`[handleContainerEmbedding] 嵌套失败: ${error.message}`, error);
@@ -1293,9 +1293,19 @@ class WorkflowApp {
                 }
             ],
             /** @param {joint.dia.Event} evt */
-            action: function(evt) {
+            action: (evt) => {
                 evt.stopPropagation();
-                this.model.remove();
+
+                // 使用优化后的NodeManager删除方法
+                try {
+                    const nodeManager = new NodeManager(this);
+                    const deleteResult = nodeManager.deleteNode(element);
+                    console.log('[deleteTool] 使用NodeManager删除节点:', element.id, '结果:', deleteResult);
+                } catch (error) {
+                    console.error('[deleteTool] NodeManager删除失败，使用备用方法:', error);
+                    // 备用方法：直接删除
+                    element.remove();
+                }
             },
         });
         activeTools.push(deleteTool);
@@ -1405,7 +1415,7 @@ class WorkflowApp {
    */
   handleCellRemove(cell) {
     try {
-      console.log(`节点被删除: ${cell.id}, 类型: ${cell.get('type')}`);
+      console.log(`[handleCellRemove] 节点被删除: ${cell.id}, 类型: ${cell.get('type')}`);
 
       // 清除相关状态
       if (this.state.selectedElement === cell) {
@@ -1423,11 +1433,70 @@ class WorkflowApp {
         }
       }
 
+      // 如果删除的是容器节点，进行特殊清理
+      if (cell.isContainer) {
+        console.log(`[handleCellRemove] 清理容器节点相关状态: ${cell.id}`);
+
+        // 清理容器调整大小相关状态
+        if (this.state.resizingContainer === cell) {
+          this.state.resizingContainer = null;
+          this.state.resizeDirection = null;
+          this.state.initialSize = null;
+          this.state.initialPosition = null;
+          this.state.initialMousePosition = null;
+        }
+
+        // 移除调整大小句柄
+        this.removeResizeHandles();
+
+        // 清理悬停状态
+        if (this.state.hoveredElement === cell) {
+          this.state.hoveredElement = null;
+        }
+      }
+
       // 清理UI元素
-      // this.hideNodeIcons();
+      this.cleanupCellUIElements(cell);
 
     } catch (error) {
       ErrorHandler.handle(error, '节点删除处理');
+    }
+  }
+
+  /**
+   * 清理节点相关的UI元素
+   * @param {joint.shapes.standard.Element} cell
+   */
+  cleanupCellUIElements(cell) {
+    try {
+      // 清理与该节点相关的所有图标
+      const nodeIcons = document.querySelectorAll(`[data-node-id="${cell.id}"]`);
+      nodeIcons.forEach(icon => {
+        try {
+          if (icon.parentNode) {
+            icon.parentNode.removeChild(icon);
+          }
+        } catch (e) {
+          console.warn(`[cleanupCellUIElements] 清理节点图标失败:`, e);
+        }
+      });
+
+      // 如果是当前悬停或选中的元素，清理通用图标
+      if (this.state.hoveredElement === cell || this.state.selectedElement === cell) {
+        const allIcons = document.querySelectorAll('.node-delete-icon, .node-property-icon');
+        allIcons.forEach(icon => {
+          try {
+            if (icon.parentNode) {
+              icon.parentNode.removeChild(icon);
+            }
+          } catch (e) {
+            // 忽略清理过程中的错误
+          }
+        });
+      }
+
+    } catch (error) {
+      console.warn(`[cleanupCellUIElements] 清理节点UI元素时出错:`, error);
     }
   }
 

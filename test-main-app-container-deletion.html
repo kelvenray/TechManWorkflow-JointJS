@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>主应用容器删除优化测试</title>
+    <link rel="stylesheet" href="js/lib/jointjs-3.7.7.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .test-header {
+            background: #2c3e50;
+            color: white;
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .test-controls {
+            background: white;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .test-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        .test-button.primary {
+            background: #3498db;
+            color: white;
+        }
+        
+        .test-button.success {
+            background: #27ae60;
+            color: white;
+        }
+        
+        .test-button.danger {
+            background: #e74c3c;
+            color: white;
+        }
+        
+        .test-button.warning {
+            background: #f39c12;
+            color: white;
+        }
+        
+        .test-button:hover {
+            opacity: 0.8;
+        }
+        
+        .test-status {
+            margin-left: auto;
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        
+        .status-info { background: #d1ecf1; color: #0c5460; }
+        .status-success { background: #d4edda; color: #155724; }
+        .status-warning { background: #fff3cd; color: #856404; }
+        .status-error { background: #f8d7da; color: #721c24; }
+        
+        .test-instructions {
+            background: #fff;
+            padding: 15px;
+            border-bottom: 1px solid #ddd;
+            font-size: 14px;
+            line-height: 1.5;
+        }
+        
+        .test-instructions h3 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+        }
+        
+        .test-instructions ol {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .test-instructions li {
+            margin-bottom: 5px;
+        }
+        
+        #paper-container {
+            height: calc(100vh - 200px);
+            background: white;
+            position: relative;
+        }
+        
+        .test-results {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: #2c3e50;
+            color: white;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 150px;
+            overflow-y: auto;
+            border-top: 3px solid #3498db;
+        }
+        
+        .test-results h4 {
+            margin: 0 0 10px 0;
+            color: #3498db;
+        }
+        
+        .test-results .log-entry {
+            margin-bottom: 5px;
+            padding: 2px 5px;
+            border-radius: 2px;
+        }
+        
+        .log-info { background: rgba(52, 152, 219, 0.2); }
+        .log-success { background: rgba(39, 174, 96, 0.2); }
+        .log-warning { background: rgba(243, 156, 18, 0.2); }
+        .log-error { background: rgba(231, 76, 60, 0.2); }
+    </style>
+</head>
+<body>
+    <div class="test-header">
+        <h1>主应用容器删除优化测试</h1>
+        <p>测试主工作流编辑器中的容器删除优化功能</p>
+    </div>
+    
+    <div class="test-controls">
+        <button class="test-button primary" onclick="createTestScenario()">创建测试场景</button>
+        <button class="test-button success" onclick="createConnections()">创建连接线</button>
+        <button class="test-button warning" onclick="testContainerDeletion()">测试容器删除</button>
+        <button class="test-button danger" onclick="clearAll()">清空画布</button>
+        <button class="test-button" onclick="runFullTest()">运行完整测试</button>
+        
+        <div class="test-status status-info" id="test-status">
+            准备就绪 - 点击"创建测试场景"开始
+        </div>
+    </div>
+    
+    <div class="test-instructions">
+        <h3>测试说明：</h3>
+        <ol>
+            <li><strong>创建测试场景</strong>：创建一个容器和多个不同类型的节点</li>
+            <li><strong>创建连接线</strong>：在节点之间创建连接线</li>
+            <li><strong>手动测试</strong>：点击容器节点，然后点击删除图标测试删除功能</li>
+            <li><strong>自动测试</strong>：点击"测试容器删除"进行自动化测试</li>
+            <li><strong>验证结果</strong>：确认容器被删除，嵌套节点和连接线保留</li>
+        </ol>
+    </div>
+    
+    <div id="paper-container"></div>
+    
+    <div class="test-results">
+        <h4>测试日志：</h4>
+        <div id="test-log"></div>
+    </div>
+
+    <!-- JointJS依赖库 -->
+    <script src="js/lib/jquery-3.7.1.min.js"></script>
+    <script src="js/lib/underscore-1.13.6.min.js"></script>
+    <script src="js/lib/backbone-1.4.1.min.js"></script>
+    <script src="js/lib/jointjs-3.7.7.min.js"></script>
+
+    <!-- 应用模块 -->
+    <script src="js/core/constants.js"></script>
+    <script src="js/utils/helpers.js"></script>
+    <script src="js/features/node-manager.js"></script>
+    <script src="js/core/graph.js"></script>
+    <script src="js/main.js"></script>
+
+    <script>
+        // 测试变量
+        let workflowApp;
+        let testContainer;
+        let testNodes = [];
+        let testLinks = [];
+        
+        // 初始化主应用
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                log('初始化主工作流应用...', 'info');
+                
+                // 创建应用实例
+                workflowApp = new WorkflowApp();
+                
+                // 设置容器
+                const paperContainer = document.getElementById('paper-container');
+                workflowApp.paper.el = paperContainer;
+                
+                // 初始化应用
+                await workflowApp.init();
+                
+                log('主应用初始化完成', 'success');
+                updateStatus('主应用已初始化 - 可以开始测试', 'success');
+                
+            } catch (error) {
+                log('初始化失败: ' + error.message, 'error');
+                updateStatus('初始化失败', 'error');
+                console.error(error);
+            }
+        });
+        
+        // 创建测试场景
+        function createTestScenario() {
+            try {
+                if (!workflowApp) {
+                    updateStatus('应用未初始化', 'error');
+                    return;
+                }
+                
+                log('创建测试场景...', 'info');
+                
+                // 清空现有内容
+                workflowApp.graph.clear();
+                testNodes = [];
+                testLinks = [];
+                testContainer = null;
+                
+                // 创建NodeManager实例
+                const nodeManager = new NodeManager(workflowApp);
+                
+                // 创建容器节点
+                testContainer = nodeManager.createContainerNode(400, 300);
+                if (!testContainer) {
+                    throw new Error('容器节点创建失败');
+                }
+                testContainer.resize(350, 250);
+                workflowApp.graph.addCell(testContainer);
+                
+                // 创建不同类型的节点
+                const node1 = nodeManager.createProcessNode(350, 250);  // Grouping节点
+                const node2 = nodeManager.createDecisionNode(500, 250); // 决策节点
+                const node3 = nodeManager.createProcessNode(350, 350);  // 另一个Grouping节点
+                const node4 = nodeManager.createSwitchNode(500, 350);   // Switch节点
+                
+                if (!node1 || !node2 || !node3 || !node4) {
+                    throw new Error('节点创建失败');
+                }
+                
+                // 添加节点到图中
+                workflowApp.graph.addCell([node1, node2, node3, node4]);
+                testNodes = [node1, node2, node3, node4];
+                
+                // 手动嵌套节点到容器中
+                setTimeout(() => {
+                    try {
+                        testNodes.forEach(node => {
+                            testContainer.embed(node);
+                            node.toFront();
+                        });
+                        
+                        log(`测试场景创建完成 - 容器包含${testNodes.length}个节点`, 'success');
+                        updateStatus('测试场景已创建 - 可以创建连接线', 'success');
+                        
+                    } catch (embedError) {
+                        log('嵌套节点失败: ' + embedError.message, 'error');
+                        updateStatus('嵌套节点失败', 'error');
+                    }
+                }, 100);
+                
+            } catch (error) {
+                log('创建测试场景失败: ' + error.message, 'error');
+                updateStatus('创建场景失败', 'error');
+                console.error(error);
+            }
+        }
+        
+        // 创建连接线
+        function createConnections() {
+            try {
+                if (!testNodes || testNodes.length < 2) {
+                    updateStatus('请先创建测试场景', 'warning');
+                    return;
+                }
+                
+                log('创建连接线...', 'info');
+                
+                // 创建节点间的连接线
+                const link1 = new joint.shapes.standard.Link({
+                    source: { id: testNodes[0].id },
+                    target: { id: testNodes[1].id },
+                    attrs: {
+                        line: { stroke: '#333', strokeWidth: 2 }
+                    }
+                });
+                
+                const link2 = new joint.shapes.standard.Link({
+                    source: { id: testNodes[1].id },
+                    target: { id: testNodes[2].id },
+                    attrs: {
+                        line: { stroke: '#333', strokeWidth: 2 }
+                    }
+                });
+                
+                const link3 = new joint.shapes.standard.Link({
+                    source: { id: testNodes[2].id },
+                    target: { id: testNodes[3].id },
+                    attrs: {
+                        line: { stroke: '#333', strokeWidth: 2 }
+                    }
+                });
+                
+                workflowApp.graph.addCell([link1, link2, link3]);
+                testLinks = [link1, link2, link3];
+                
+                log(`创建了${testLinks.length}条连接线`, 'success');
+                updateStatus('连接线已创建 - 可以测试删除功能', 'success');
+                
+            } catch (error) {
+                log('创建连接线失败: ' + error.message, 'error');
+                updateStatus('创建连接线失败', 'error');
+                console.error(error);
+            }
+        }
+        
+        // 测试容器删除
+        function testContainerDeletion() {
+            try {
+                if (!testContainer) {
+                    updateStatus('请先创建测试场景', 'warning');
+                    return;
+                }
+                
+                log('开始测试容器删除...', 'info');
+                
+                // 记录删除前的状态
+                const nodesBefore = testNodes.map(node => ({
+                    id: node.id,
+                    exists: !!workflowApp.graph.getCell(node.id),
+                    position: node.position()
+                }));
+                
+                const linksBefore = testLinks.map(link => ({
+                    id: link.id,
+                    exists: !!workflowApp.graph.getCell(link.id)
+                }));
+                
+                log(`删除前状态: 容器存在, ${nodesBefore.length}个节点, ${linksBefore.length}条连接线`, 'info');
+                
+                // 使用NodeManager删除容器
+                const nodeManager = new NodeManager(workflowApp);
+                const deleteResult = nodeManager.deleteNode(testContainer);
+                
+                log(`删除操作结果: ${deleteResult}`, deleteResult ? 'success' : 'error');
+                
+                // 验证删除结果
+                setTimeout(() => {
+                    verifyDeletionResults(nodesBefore, linksBefore);
+                }, 200);
+                
+            } catch (error) {
+                log('测试容器删除失败: ' + error.message, 'error');
+                updateStatus('删除测试失败', 'error');
+                console.error(error);
+            }
+        }
+        
+        // 验证删除结果
+        function verifyDeletionResults(nodesBefore, linksBefore) {
+            try {
+                const results = [];
+                let allPassed = true;
+                
+                // 检查容器是否被删除
+                const containerExists = !!workflowApp.graph.getCell(testContainer.id);
+                if (containerExists) {
+                    results.push('❌ 容器节点未被删除');
+                    allPassed = false;
+                } else {
+                    results.push('✅ 容器节点已正确删除');
+                }
+                
+                // 检查嵌套节点是否保留
+                let nodesPreserved = 0;
+                nodesBefore.forEach((nodeBefore, index) => {
+                    const nodeExists = !!workflowApp.graph.getCell(nodeBefore.id);
+                    if (nodeExists) {
+                        nodesPreserved++;
+                        const currentNode = workflowApp.graph.getCell(nodeBefore.id);
+                        const currentPos = currentNode.position();
+                        
+                        // 检查位置是否保持
+                        const positionMaintained = 
+                            Math.abs(currentPos.x - nodeBefore.position.x) < 5 &&
+                            Math.abs(currentPos.y - nodeBefore.position.y) < 5;
+                        
+                        if (positionMaintained) {
+                            results.push(`✅ 节点${index + 1}位置保持正确`);
+                        } else {
+                            results.push(`⚠️ 节点${index + 1}位置发生变化`);
+                        }
+                    } else {
+                        results.push(`❌ 节点${index + 1}丢失`);
+                        allPassed = false;
+                    }
+                });
+                
+                if (nodesPreserved === nodesBefore.length) {
+                    results.push('✅ 所有嵌套节点已保留');
+                } else {
+                    results.push(`❌ 只有${nodesPreserved}/${nodesBefore.length}个节点被保留`);
+                    allPassed = false;
+                }
+                
+                // 检查连接线是否保留
+                let linksPreserved = 0;
+                linksBefore.forEach((linkBefore, index) => {
+                    const linkExists = !!workflowApp.graph.getCell(linkBefore.id);
+                    if (linkExists) {
+                        linksPreserved++;
+                    } else {
+                        results.push(`❌ 连接线${index + 1}丢失`);
+                        allPassed = false;
+                    }
+                });
+                
+                if (linksPreserved === linksBefore.length) {
+                    results.push('✅ 所有连接线已保留');
+                } else {
+                    results.push(`❌ 只有${linksPreserved}/${linksBefore.length}条连接线被保留`);
+                    allPassed = false;
+                }
+                
+                // 输出结果
+                results.forEach(result => {
+                    const type = result.startsWith('✅') ? 'success' : 
+                                result.startsWith('⚠️') ? 'warning' : 'error';
+                    log(result, type);
+                });
+                
+                const finalStatus = allPassed ? 
+                    '🎉 测试通过！容器删除优化功能正常工作' : 
+                    '❌ 测试失败！存在问题需要修复';
+                
+                const statusType = allPassed ? 'success' : 'error';
+                log(finalStatus, statusType);
+                updateStatus(finalStatus, statusType);
+                
+            } catch (error) {
+                log('验证结果失败: ' + error.message, 'error');
+                updateStatus('验证失败', 'error');
+                console.error(error);
+            }
+        }
+        
+        // 清空画布
+        function clearAll() {
+            if (workflowApp) {
+                workflowApp.graph.clear();
+                testContainer = null;
+                testNodes = [];
+                testLinks = [];
+                log('画布已清空', 'info');
+                updateStatus('画布已清空 - 可以重新开始测试', 'info');
+            }
+        }
+        
+        // 运行完整测试
+        async function runFullTest() {
+            log('开始运行完整自动化测试...', 'info');
+            updateStatus('运行完整测试中...', 'warning');
+            
+            try {
+                // 步骤1：创建测试场景
+                createTestScenario();
+                await sleep(500);
+                
+                // 步骤2：创建连接线
+                createConnections();
+                await sleep(500);
+                
+                // 步骤3：测试删除
+                testContainerDeletion();
+                
+            } catch (error) {
+                log('完整测试失败: ' + error.message, 'error');
+                updateStatus('完整测试失败', 'error');
+            }
+        }
+        
+        // 工具函数
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('test-status');
+            statusEl.textContent = message;
+            statusEl.className = `test-status status-${type}`;
+        }
+        
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('test-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${timestamp}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>

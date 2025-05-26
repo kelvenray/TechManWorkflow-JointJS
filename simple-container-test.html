@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简单容器删除测试</title>
+    <link rel="stylesheet" href="js/lib/jointjs-3.7.7.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        
+        #controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+        
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        button:hover {
+            background: #0056b3;
+        }
+        
+        button.danger {
+            background: #dc3545;
+        }
+        
+        button.danger:hover {
+            background: #c82333;
+        }
+        
+        #status {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+        
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        .info { background: #d1ecf1; color: #0c5460; }
+        
+        #paper {
+            border: 1px solid #ddd;
+            background: #fafafa;
+        }
+    </style>
+</head>
+<body>
+    <h1>简单容器删除测试</h1>
+    
+    <div id="controls">
+        <button onclick="createTestScene()">1. 创建测试场景</button>
+        <button onclick="embedNodes()">2. 嵌套节点到容器</button>
+        <button class="danger" onclick="deleteContainer()">3. 删除容器</button>
+        <button onclick="verifyResult()">4. 验证结果</button>
+        <button onclick="clearAll()">清空</button>
+        
+        <div id="status" class="info">点击按钮开始测试</div>
+    </div>
+    
+    <div id="paper"></div>
+
+    <!-- JointJS依赖库 -->
+    <script src="js/lib/jquery-3.7.1.min.js"></script>
+    <script src="js/lib/underscore-1.13.6.min.js"></script>
+    <script src="js/lib/backbone-1.4.1.min.js"></script>
+    <script src="js/lib/jointjs-3.7.7.min.js"></script>
+
+    <!-- 应用模块 -->
+    <script src="js/core/constants.js"></script>
+    <script src="js/utils/helpers.js"></script>
+
+    <script>
+        // 简单的测试变量
+        let graph, paper;
+        let container, node1, node2;
+        
+        // 初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            // 创建图和纸张
+            graph = new joint.dia.Graph();
+            paper = new joint.dia.Paper({
+                el: document.getElementById('paper'),
+                model: graph,
+                width: 800,
+                height: 600,
+                gridSize: 10,
+                drawGrid: true,
+                background: { color: '#f8f9fa' }
+            });
+            
+            updateStatus('初始化完成', 'info');
+        });
+        
+        function createTestScene() {
+            try {
+                // 清空图
+                graph.clear();
+                
+                // 创建容器
+                container = new joint.shapes.standard.Rectangle({
+                    position: { x: 200, y: 150 },
+                    size: { width: 300, height: 200 },
+                    attrs: {
+                        body: {
+                            fill: 'rgba(255, 255, 255, 0.8)',
+                            stroke: '#333',
+                            strokeWidth: 2
+                        },
+                        label: {
+                            text: '容器',
+                            fill: '#333'
+                        }
+                    }
+                });
+                container.isContainer = true;
+                
+                // 创建两个普通节点
+                node1 = new joint.shapes.standard.Rectangle({
+                    position: { x: 250, y: 200 },
+                    size: { width: 80, height: 40 },
+                    attrs: {
+                        body: {
+                            fill: '#4CAF50',
+                            stroke: '#333'
+                        },
+                        label: {
+                            text: '节点1',
+                            fill: 'white'
+                        }
+                    }
+                });
+                
+                node2 = new joint.shapes.standard.Rectangle({
+                    position: { x: 370, y: 200 },
+                    size: { width: 80, height: 40 },
+                    attrs: {
+                        body: {
+                            fill: '#2196F3',
+                            stroke: '#333'
+                        },
+                        label: {
+                            text: '节点2',
+                            fill: 'white'
+                        }
+                    }
+                });
+                
+                // 添加到图中
+                graph.addCells([container, node1, node2]);
+                
+                updateStatus('测试场景创建完成：1个容器 + 2个节点', 'success');
+                
+            } catch (error) {
+                updateStatus('创建场景失败: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+        
+        function embedNodes() {
+            try {
+                if (!container || !node1 || !node2) {
+                    updateStatus('请先创建测试场景', 'error');
+                    return;
+                }
+                
+                // 嵌套节点到容器
+                container.embed(node1);
+                container.embed(node2);
+                
+                // 确保节点在前台
+                node1.toFront();
+                node2.toFront();
+                
+                updateStatus('节点已嵌套到容器中', 'success');
+                console.log('嵌套的节点:', container.getEmbeddedCells());
+                
+            } catch (error) {
+                updateStatus('嵌套节点失败: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+        
+        function deleteContainer() {
+            try {
+                if (!container) {
+                    updateStatus('请先创建测试场景', 'error');
+                    return;
+                }
+                
+                console.log('删除前的状态:');
+                console.log('- 容器存在:', !!graph.getCell(container.id));
+                console.log('- 节点1存在:', !!graph.getCell(node1.id));
+                console.log('- 节点2存在:', !!graph.getCell(node2.id));
+                console.log('- 嵌套的节点:', container.getEmbeddedCells());
+                
+                // 获取嵌套的节点
+                const embeddedCells = container.getEmbeddedCells();
+                console.log('嵌套节点数量:', embeddedCells.length);
+                
+                // 记录节点位置
+                const positions = embeddedCells.map(cell => ({
+                    id: cell.id,
+                    position: cell.position()
+                }));
+                
+                // 解除嵌套关系
+                embeddedCells.forEach(cell => {
+                    container.unembed(cell);
+                    console.log('解除嵌套:', cell.id);
+                });
+                
+                // 恢复节点位置
+                positions.forEach(({id, position}) => {
+                    const cell = graph.getCell(id);
+                    if (cell) {
+                        cell.position(position.x, position.y);
+                        cell.toFront();
+                    }
+                });
+                
+                // 删除容器
+                container.remove();
+                
+                updateStatus('容器已删除，请验证结果', 'info');
+                
+            } catch (error) {
+                updateStatus('删除容器失败: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+        
+        function verifyResult() {
+            try {
+                const results = [];
+                
+                // 检查容器是否被删除
+                const containerExists = !!graph.getCell(container.id);
+                if (containerExists) {
+                    results.push('❌ 容器仍然存在');
+                } else {
+                    results.push('✅ 容器已被删除');
+                }
+                
+                // 检查节点是否保留
+                const node1Exists = !!graph.getCell(node1.id);
+                const node2Exists = !!graph.getCell(node2.id);
+                
+                if (node1Exists && node2Exists) {
+                    results.push('✅ 所有节点都保留了');
+                } else {
+                    results.push(`❌ 节点丢失 (节点1: ${node1Exists ? '存在' : '丢失'}, 节点2: ${node2Exists ? '存在' : '丢失'})`);
+                }
+                
+                // 检查节点是否可以交互
+                if (node1Exists) {
+                    const view1 = paper.findViewByModel(node1);
+                    if (view1) {
+                        results.push('✅ 节点1可以交互');
+                    } else {
+                        results.push('❌ 节点1无法交互');
+                    }
+                }
+                
+                const allPassed = results.every(r => r.startsWith('✅'));
+                const status = allPassed ? '测试通过！' : '测试失败！';
+                const statusClass = allPassed ? 'success' : 'error';
+                
+                updateStatus(status + ' ' + results.join(', '), statusClass);
+                
+                console.log('验证结果:', results);
+                
+            } catch (error) {
+                updateStatus('验证失败: ' + error.message, 'error');
+                console.error(error);
+            }
+        }
+        
+        function clearAll() {
+            graph.clear();
+            container = node1 = node2 = null;
+            updateStatus('画布已清空', 'info');
+        }
+        
+        function updateStatus(message, type = 'info') {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            statusEl.className = type;
+        }
+    </script>
+</body>
+</html>

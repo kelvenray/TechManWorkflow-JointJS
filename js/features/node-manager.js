@@ -541,23 +541,31 @@ class NodeManager {
    * 删除节点
    */
   deleteNode(node) {
-    return ErrorHandler.safeExecute(() => {
-      console.log('删除节点:', node.id, node.get('type'));
+    try {
+      console.log('[deleteNode] 开始删除节点:', node.id, node.get('type'));
 
       // 清除应用状态
       this.clearNodeFromAppState(node);
 
       // 根据节点类型使用不同的删除策略
       if (node.isContainer) {
+        console.log('[deleteNode] 检测到容器节点，调用容器删除方法');
         this.deleteContainerNode(node);
       } else if (this.isStartOrEndNode(node)) {
+        console.log('[deleteNode] 检测到特殊节点，调用特殊删除方法');
         this.deleteSpecialNode(node);
       } else {
+        console.log('[deleteNode] 普通节点，直接删除');
         node.remove();
       }
 
+      console.log('[deleteNode] 节点删除完成:', node.id);
       return true;
-    }, '节点删除');
+    } catch (error) {
+      console.error('[deleteNode] 删除节点时出错:', error);
+      ErrorHandler.handle(error, '节点删除');
+      throw error; // 重新抛出错误，让调用者知道删除失败
+    }
   }
 
   /**
@@ -581,28 +589,152 @@ class NodeManager {
 
   /**
    * 删除容器节点
+   * 优化版本：确保嵌套节点保持位置和连接，只删除容器本身
    */
   deleteContainerNode(node) {
-    console.log(`容器节点 ${node.id} 将被删除`);
+    console.log(`[deleteContainerNode] 开始删除容器节点: ${node.id}`);
 
     // 获取容器中的所有嵌套节点
     const embeddedCells = node.getEmbeddedCells ? node.getEmbeddedCells() : [];
-    console.log(`容器节点包含 ${embeddedCells.length} 个嵌套节点`);
+    console.log(`[deleteContainerNode] 容器节点包含 ${embeddedCells.length} 个嵌套节点`);
 
-    // 先解除所有嵌套关系
+    // 记录嵌套节点的当前位置，确保它们保持在原位
+    const nodePositions = new Map();
+    embeddedCells.forEach(cell => {
+      if (cell.isElement && cell.isElement()) {
+        const position = cell.position();
+        nodePositions.set(cell.id, { x: position.x, y: position.y });
+        console.log(`[deleteContainerNode] 记录节点 ${cell.id} 位置: (${position.x}, ${position.y})`);
+      }
+    });
+
+    // 先解除所有嵌套关系，但保持节点在原位
     if (embeddedCells.length > 0) {
       embeddedCells.forEach(cell => {
         try {
+          // 解除嵌套关系
           node.unembed(cell);
-          console.log(`解除嵌套关系: ${cell.id}`);
+
+          // 确保节点保持在原来的位置
+          if (cell.isElement && cell.isElement()) {
+            const savedPosition = nodePositions.get(cell.id);
+            if (savedPosition) {
+              cell.position(savedPosition.x, savedPosition.y);
+            }
+
+            // 确保节点在前台显示，可以正常交互
+            cell.toFront();
+          }
+
+          console.log(`[deleteContainerNode] 成功解除嵌套关系并保持位置: ${cell.id}`);
         } catch (e) {
-          console.warn(`解除嵌套关系失败: ${cell.id}`, e);
+          console.warn(`[deleteContainerNode] 解除嵌套关系失败: ${cell.id}`, e);
         }
       });
     }
 
-    // 删除容器节点
+    // 清理容器相关的UI元素
+    this.cleanupContainerUIElements(node);
+
+    // 删除容器节点本身
+    console.log(`[deleteContainerNode] 删除容器节点: ${node.id}`);
     this.forceRemoveNode(node);
+
+    // 验证嵌套节点是否仍然存在且可交互
+    setTimeout(() => {
+      embeddedCells.forEach(cell => {
+        if (cell.isElement && cell.isElement()) {
+          const stillExists = this.graph.getCell(cell.id);
+          if (stillExists) {
+            console.log(`[deleteContainerNode] 验证成功: 节点 ${cell.id} 仍然存在且独立`);
+          } else {
+            console.warn(`[deleteContainerNode] 警告: 节点 ${cell.id} 意外丢失`);
+          }
+        }
+      });
+    }, 100);
+
+    console.log(`[deleteContainerNode] 容器删除完成，${embeddedCells.length} 个嵌套节点已保留`);
+  }
+
+  /**
+   * 清理容器相关的UI元素
+   */
+  cleanupContainerUIElements(containerNode) {
+    try {
+      console.log(`[cleanupContainerUIElements] 清理容器 ${containerNode.id} 的UI元素`);
+
+      // 清理应用状态中的容器引用
+      const state = this.app.state;
+
+      // 清理调整大小相关状态
+      if (state.resizingContainer === containerNode) {
+        state.resizingContainer = null;
+        state.resizeDirection = null;
+        state.initialSize = null;
+        state.initialPosition = null;
+        state.initialMousePosition = null;
+      }
+
+      // 清理调整大小句柄
+      if (state.resizeHandles && state.resizeHandles.length > 0) {
+        state.resizeHandles.forEach(handle => {
+          try {
+            if (handle.parentNode) {
+              handle.parentNode.removeChild(handle);
+            }
+          } catch (e) {
+            console.warn(`[cleanupContainerUIElements] 清理调整大小句柄失败:`, e);
+          }
+        });
+        state.resizeHandles = [];
+      }
+
+      // 清理容器相关的图标（删除图标、属性图标）
+      this.cleanupContainerIcons(containerNode);
+
+    } catch (error) {
+      console.warn(`[cleanupContainerUIElements] 清理容器UI元素时出错:`, error);
+    }
+  }
+
+  /**
+   * 清理容器相关的图标
+   */
+  cleanupContainerIcons(containerNode) {
+    try {
+      // 查找并移除所有与容器相关的图标
+      const containerIcons = document.querySelectorAll(`[data-node-id="${containerNode.id}"]`);
+      containerIcons.forEach(icon => {
+        try {
+          if (icon.parentNode) {
+            icon.parentNode.removeChild(icon);
+          }
+        } catch (e) {
+          console.warn(`[cleanupContainerIcons] 移除容器图标失败:`, e);
+        }
+      });
+
+      // 通用图标清理
+      const allIcons = document.querySelectorAll('.node-delete-icon, .node-property-icon');
+      allIcons.forEach(icon => {
+        try {
+          // 检查图标是否与被删除的容器相关
+          const iconRect = icon.getBoundingClientRect();
+          if (iconRect.width === 0 && iconRect.height === 0) {
+            // 图标可能已经失效，移除它
+            if (icon.parentNode) {
+              icon.parentNode.removeChild(icon);
+            }
+          }
+        } catch (e) {
+          // 忽略清理过程中的错误
+        }
+      });
+
+    } catch (error) {
+      console.warn(`[cleanupContainerIcons] 清理容器图标时出错:`, error);
+    }
   }
 
   /**
