@@ -215,6 +215,127 @@ class PropertyPanel {
       .tab-content.active {
         display: block;
       }
+
+      /* Group Setting 特殊样式 */
+      .group-setting-categories {
+        display: flex;
+        height: 400px;
+      }
+
+      .category-section {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        border-right: 1px solid #ddd;
+      }
+
+      .category-section:last-child {
+        border-right: none;
+      }
+
+      .category-header {
+        padding: 10px;
+        color: white;
+        font-weight: bold;
+        text-align: center;
+        cursor: pointer;
+        transition: opacity 0.2s ease;
+      }
+
+      .category-header:hover {
+        opacity: 0.8;
+      }
+
+      .master-data-header {
+        background-color: #e91e63;
+      }
+
+      .loading-seq-header {
+        background-color: #e91e63;
+      }
+
+      .left-over-header {
+        background-color: #e91e63;
+      }
+
+      .categorial-header {
+        background-color: #e91e63;
+      }
+
+      .category-content {
+        flex: 1;
+        padding: 15px;
+        overflow-y: auto;
+        display: none;
+      }
+
+      .category-content.active {
+        display: block;
+      }
+
+      .input-with-icon {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+
+      .input-with-icon input {
+        flex: 1;
+        padding-right: 30px;
+      }
+
+      .fx-icon {
+        position: absolute;
+        right: 8px;
+        color: #666;
+        font-style: italic;
+        font-weight: bold;
+        pointer-events: none;
+      }
+
+      .loading-seq-field {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+        padding: 5px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+      }
+
+      .field-number {
+        margin-right: 10px;
+        font-weight: bold;
+        min-width: 20px;
+      }
+
+      .field-name {
+        flex: 1;
+        margin-right: 10px;
+      }
+
+      .field-order {
+        font-weight: bold;
+        color: #666;
+      }
+
+      .add-field-btn {
+        width: 30px;
+        height: 30px;
+        border: 1px solid #ddd;
+        background: white;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 18px;
+        color: #666;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-top: 10px;
+      }
+
+      .add-field-btn:hover {
+        background-color: #f0f0f0;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -293,6 +414,106 @@ class PropertyPanel {
         <div class="form-group">
           <label for="node-description">描述</label>
           <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+      `;
+    } else if (type === 'standard.Rectangle' && nodeLabel === 'Group Setting') {
+      // Group Setting节点属性
+      panelTitle = 'Group Setting节点属性';
+
+      // 通用选项卡内容
+      commonContent = `
+        <div class="form-group">
+          <label for="node-name">节点名称</label>
+          <input type="text" id="node-name" value="${properties.name || 'Group Setting'}" />
+        </div>
+        <div class="form-group">
+          <label for="node-description">描述</label>
+          <textarea id="node-description">${properties.description || ''}</textarea>
+        </div>
+      `;
+
+      // 属性选项卡内容 - 4个分类
+      propertiesContent = `
+        <div class="group-setting-categories">
+          <!-- Master Data Category -->
+          <div class="category-section">
+            <div class="category-header master-data-header" data-category="master-data">
+              <span>Master Data</span>
+            </div>
+            <div class="category-content master-data-content active">
+              <div class="form-group">
+                <label for="source-field-name">Source Field Name</label>
+                <div class="input-with-icon">
+                  <input type="text" id="source-field-name" value="${properties.sourceFieldName || ''}" />
+                  <span class="fx-icon">fx</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="destination-field-name">Destination Field Name</label>
+                <div class="input-with-icon">
+                  <input type="text" id="destination-field-name" value="${properties.destinationFieldName || ''}" />
+                  <span class="fx-icon">fx</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Loading Seq Category -->
+          <div class="category-section">
+            <div class="category-header loading-seq-header" data-category="loading-seq">
+              <span>Loading Seq</span>
+            </div>
+            <div class="category-content loading-seq-content">
+              <div id="loading-seq-fields">
+                ${this.generateLoadingSeqFields(properties.loadingSeqFields || [])}
+              </div>
+              <button type="button" id="add-loading-seq-field" class="add-field-btn">+</button>
+            </div>
+          </div>
+
+          <!-- Left Over Category -->
+          <div class="category-section">
+            <div class="category-header left-over-header" data-category="left-over">
+              <span>Left Over</span>
+            </div>
+            <div class="category-content left-over-content">
+              <div class="form-group">
+                <label for="left-over-way-out">Left Over way out</label>
+                <select id="left-over-way-out">
+                  <option value="Light Load" ${properties.leftOverWayOut === 'Light Load' ? 'selected' : ''}>Light Load</option>
+                  <option value="Next Round" ${properties.leftOverWayOut === 'Next Round' ? 'selected' : ''}>Next Round</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="loop-data-type">Loop Data Type</label>
+                <select id="loop-data-type">
+                  <option value="OnlyLeftover" ${properties.loopDataType === 'OnlyLeftover' ? 'selected' : ''}>OnlyLeftover</option>
+                  <option value="All" ${properties.loopDataType === 'All' ? 'selected' : ''}>All</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" id="is-not-keep-cntr" ${properties.isNotKeepCNTR ? 'checked' : ''} />
+                  IsNotKeepCNTR
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Categorial Category -->
+          <div class="category-section">
+            <div class="category-header categorial-header" data-category="categorial">
+              <span>Categorial</span>
+            </div>
+            <div class="category-content categorial-content">
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" id="enabled" ${properties.enabled ? 'checked' : ''} />
+                  Enabled
+                </label>
+              </div>
+            </div>
+          </div>
         </div>
       `;
     } else if (type === 'standard.Rectangle' && !element.isContainer && !element.isSwitch) {
@@ -504,6 +725,11 @@ class PropertyPanel {
       this.setupTabSwitching();
     }
 
+    // 添加Group Setting分类切换功能
+    if (type === 'standard.Rectangle' && nodeLabel === 'Group Setting') {
+      this.setupGroupSettingCategories();
+    }
+
     this.bindPanelEvents();
   }
 
@@ -524,6 +750,61 @@ class PropertyPanel {
         tab.classList.add('active');
         const tabId = tab.getAttribute('data-tab');
         const targetContent = this.panel.querySelector(`#tab-${tabId}`);
+        if (targetContent) {
+          targetContent.classList.add('active');
+        }
+      });
+    });
+  }
+
+  /**
+   * 生成Loading Seq字段
+   */
+  generateLoadingSeqFields(fields) {
+    if (!fields || fields.length === 0) {
+      return `
+        <div class="loading-seq-field">
+          <span class="field-number">1.</span>
+          <span class="field-name">Field1</span>
+          <span class="field-order">Asc</span>
+        </div>
+        <div class="loading-seq-field">
+          <span class="field-number">2.</span>
+          <span class="field-name">Field2</span>
+          <span class="field-order">Desc</span>
+        </div>
+        <div class="loading-seq-field">
+          <span class="field-number">3.</span>
+          <span class="field-name">Field3</span>
+          <span class="field-order">Desc</span>
+        </div>
+      `;
+    }
+
+    return fields.map((field, index) => `
+      <div class="loading-seq-field">
+        <span class="field-number">${index + 1}.</span>
+        <span class="field-name">${field.field}</span>
+        <span class="field-order">${field.order}</span>
+      </div>
+    `).join('');
+  }
+
+  /**
+   * 设置Group Setting分类切换功能
+   */
+  setupGroupSettingCategories() {
+    const categoryHeaders = this.panel.querySelectorAll('.category-header');
+    const categoryContents = this.panel.querySelectorAll('.category-content');
+
+    categoryHeaders.forEach(header => {
+      this.eventManager.addEventListener(header, 'click', () => {
+        // 移除所有分类的活动状态
+        categoryContents.forEach(content => content.classList.remove('active'));
+
+        // 添加当前分类的活动状态
+        const category = header.getAttribute('data-category');
+        const targetContent = this.panel.querySelector(`.${category}-content`);
         if (targetContent) {
           targetContent.classList.add('active');
         }
@@ -703,6 +984,37 @@ class PropertyPanel {
         });
 
         properties.cases = cases;
+      } else if (type === 'standard.Rectangle' && nodeLabel === 'Group Setting') {
+        // Group Setting节点特定属性
+        const sourceFieldNameInput = this.panel.querySelector('#source-field-name');
+        if (sourceFieldNameInput) {
+          properties.sourceFieldName = sourceFieldNameInput.value.trim();
+        }
+
+        const destinationFieldNameInput = this.panel.querySelector('#destination-field-name');
+        if (destinationFieldNameInput) {
+          properties.destinationFieldName = destinationFieldNameInput.value.trim();
+        }
+
+        const leftOverWayOutSelect = this.panel.querySelector('#left-over-way-out');
+        if (leftOverWayOutSelect) {
+          properties.leftOverWayOut = leftOverWayOutSelect.value;
+        }
+
+        const loopDataTypeSelect = this.panel.querySelector('#loop-data-type');
+        if (loopDataTypeSelect) {
+          properties.loopDataType = loopDataTypeSelect.value;
+        }
+
+        const isNotKeepCNTRCheckbox = this.panel.querySelector('#is-not-keep-cntr');
+        if (isNotKeepCNTRCheckbox) {
+          properties.isNotKeepCNTR = isNotKeepCNTRCheckbox.checked;
+        }
+
+        const enabledCheckbox = this.panel.querySelector('#enabled');
+        if (enabledCheckbox) {
+          properties.enabled = enabledCheckbox.checked;
+        }
       } else if (type === 'standard.Rectangle' && !this.currentElement.isContainer && !this.currentElement.isSwitch) {
         // Grouping节点特定属性
         const fieldInput = this.panel.querySelector('#node-field');

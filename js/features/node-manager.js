@@ -42,6 +42,9 @@ class NodeManager {
         case NODE_TYPES.SWITCH:
           node = this.createSwitchNode(x, y, options);
           break;
+        case NODE_TYPES.GROUP_SETTING:
+          node = this.createGroupSettingNode(x, y, options);
+          break;
         case NODE_TYPES.CONTAINER:
           node = this.createContainerNode(x, y, options);
           break;
@@ -284,6 +287,64 @@ class NodeManager {
 
     // 标记为Switch节点和非容器节点
     node.isSwitch = true;
+    node.isContainer = false;
+
+    // 设置z-index确保可见性
+    node.set('z', 5);
+
+    return node;
+  }
+
+  /**
+   * 创建Group Setting节点
+   */
+  createGroupSettingNode(x, y, options = {}) {
+    const size = CONFIG.nodes.sizes.groupSetting;
+    const colors = CONFIG.nodes.colors;
+
+    const node = new joint.shapes.standard.Rectangle();
+    node.position(x - size.width/2, y - size.height/2);
+    node.resize(size.width, size.height);
+    node.attr({
+      body: {
+        fill: colors.groupSetting,
+        stroke: colors.groupSettingStroke,
+        strokeWidth: 3,
+        rx: 10,
+        ry: 10,
+        pointerEvents: 'auto'
+      },
+      label: {
+        text: 'Group Setting',
+        fill: '#fff',
+        fontWeight: 'bold',
+        fontSize: 16,
+        pointerEvents: 'auto'
+      }
+    });
+
+    // 设置默认属性
+    node.prop('properties', {
+      name: 'Group Setting',
+      description: '',
+      // Master Data category
+      sourceFieldName: '',
+      destinationFieldName: '',
+      // Loading Seq category
+      loadingSeqFields: [
+        { field: 'Field1', order: 'Asc' },
+        { field: 'Field2', order: 'Desc' },
+        { field: 'Field3', order: 'Desc' }
+      ],
+      // Left Over category
+      leftOverWayOut: 'Light Load',
+      loopDataType: 'OnlyLeftover',
+      isNotKeepCNTR: false,
+      // Categorial category
+      enabled: false
+    });
+
+    // 标记为非容器节点
     node.isContainer = false;
 
     // 设置z-index确保可见性

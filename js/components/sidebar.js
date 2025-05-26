@@ -100,6 +100,7 @@ class Sidebar {
       { type: NODE_TYPES.PROCESS, label: 'Grouping', color: CONFIG.nodes.colors.process },
       { type: NODE_TYPES.DECISION, label: '决策', color: CONFIG.nodes.colors.decision },
       { type: NODE_TYPES.SWITCH, label: 'Switch', color: CONFIG.nodes.colors.switch },
+      { type: NODE_TYPES.GROUP_SETTING, label: 'Group Setting', color: CONFIG.nodes.colors.groupSetting },
       { type: NODE_TYPES.CONTAINER, label: '容器', color: CONFIG.nodes.colors.container }
     ];
 

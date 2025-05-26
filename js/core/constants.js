@@ -22,7 +22,9 @@ const CONFIG = {
       switch: '#9c27b0',
       switchStroke: '#6a1b9a',
       container: '#FFFFFF',
-      containerStroke: '#CCCCCC'
+      containerStroke: '#CCCCCC',
+      groupSetting: '#ff9800',
+      groupSettingStroke: '#e65100'
     },
     sizes: {
       start: { width: 80, height: 80 },
@@ -30,7 +32,8 @@ const CONFIG = {
       process: { width: 120, height: 80 },
       decision: { width: 120, height: 120 },
       switch: { width: 140, height: 80 },
-      container: { width: 300, height: 240 }
+      container: { width: 300, height: 240 },
+      groupSetting: { width: 140, height: 80 }
     }
   },
   ui: {
@@ -148,7 +151,8 @@ const NODE_TYPES = {
   PROCESS: 'process',
   DECISION: 'decision',
   SWITCH: 'switch',
-  CONTAINER: 'container'
+  CONTAINER: 'container',
+  GROUP_SETTING: 'groupSetting'
 };
 
 // 导出配置
