@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>调整大小句柄缩放测试 - 综合版</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f5f5f5;
+        }
+
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .controls {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+
+        .status {
+            font-weight: bold;
+            color: #28a745;
+        }
+
+        .error {
+            color: #dc3545;
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 500px;
+            border: 2px solid #dee2e6;
+            border-radius: 6px;
+            position: relative;
+            overflow: hidden;
+            background: #fff;
+        }
+
+        .test-results {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e9ecef;
+            border-radius: 6px;
+        }
+
+        .test-log {
+            max-height: 200px;
+            overflow-y: auto;
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        /* 调整大小句柄样式 */
+        .resize-handle {
+            position: fixed;
+            background-color: rgba(0, 0, 0, 0.7);
+            border: 2px solid white;
+            z-index: 10001;
+            pointer-events: auto;
+            transition: transform 0.2s ease;
+        }
+
+        .resize-handle:hover {
+            transform: scale(1.2);
+            background-color: rgba(0, 0, 0, 0.9);
+        }
+
+        .resize-handle-nw {
+            cursor: nw-resize;
+            clip-path: polygon(0% 0%, 100% 0%, 0% 100%);
+        }
+
+        .resize-handle-se {
+            cursor: se-resize;
+            clip-path: polygon(100% 0%, 100% 100%, 0% 100%);
+        }
+
+        .test-marker {
+            position: fixed;
+            width: 4px;
+            height: 4px;
+            background: red;
+            z-index: 10002;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>调整大小句柄缩放测试 - 综合版</h1>
+
+        <div class="controls">
+            <div class="control-group">
+                <button onclick="createContainer()">创建容器</button>
+                <button onclick="selectContainer()">选择容器</button>
+                <button onclick="clearAll()">清除所有</button>
+            </div>
+
+            <div class="control-group">
+                <label>缩放:</label>
+                <button onclick="setZoom(0.5)">50%</button>
+                <button onclick="setZoom(0.75)">75%</button>
+                <button onclick="setZoom(1)">100%</button>
+                <button onclick="setZoom(1.25)">125%</button>
+                <button onclick="setZoom(1.5)">150%</button>
+                <button onclick="setZoom(2)">200%</button>
+            </div>
+
+            <div class="control-group">
+                <button onclick="runAutoTest()">自动测试</button>
+                <button onclick="toggleMarkers()">切换标记</button>
+                <span id="zoom-level" class="status">缩放: 100%</span>
+            </div>
+        </div>
+
+        <div id="canvas-container"></div>
+
+        <div class="test-results">
+            <h3>测试结果</h3>
+            <div id="test-status">等待测试...</div>
+            <div class="test-log" id="test-log"></div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jointjs/3.6.2/joint.min.js"></script>
+    <script>
+        let paper, graph, currentContainer, resizeHandles = [];
+        let zoomLevel = 1;
+        let testMarkers = [];
+        let showMarkers = false;
+
+        // 初始化画布
+        function initCanvas() {
+            graph = new joint.dia.Graph();
+
+            paper = new joint.dia.Paper({
+                el: document.getElementById('canvas-container'),
+                model: graph,
+                width: '100%',
+                height: '100%',
+                gridSize: 10,
+                drawGrid: true,
+                background: {
+                    color: 'rgba(240, 240, 240, 0.8)'
+                }
+            });
+
+            // 监听缩放和平移事件
+            paper.on('scale translate', () => {
+                log('缩放或平移事件触发');
+                updateResizeHandles();
+            });
+
+            log('画布初始化完成');
+        }
+
+        // 创建容器
+        function createContainer() {
+            if (currentContainer) {
+                currentContainer.remove();
+                removeResizeHandles();
+            }
+
+            currentContainer = new joint.shapes.standard.Rectangle({
+                position: { x: 150, y: 100 },
+                size: { width: 200, height: 150 },
+                attrs: {
+                    body: {
+                        fill: 'lightblue',
+                        stroke: '#333',
+                        strokeWidth: 2
+                    },
+                    label: {
+                        text: '容器节点',
+                        fontSize: 16,
+                        fill: 'black'
+                    }
+                }
+            });
+
+            graph.addCell(currentContainer);
+            log('容器节点已创建');
+        }
+
+        // 选择容器并显示调整句柄
+        function selectContainer() {
+            if (!currentContainer) {
+                log('错误: 没有容器可选择', 'error');
+                return;
+            }
+
+            createResizeHandles();
+            log('容器已选择，调整句柄已显示');
+        }
+
+        // 清除所有
+        function clearAll() {
+            if (currentContainer) {
+                currentContainer.remove();
+                currentContainer = null;
+            }
+            removeResizeHandles();
+            clearTestMarkers();
+            log('所有内容已清除');
+        }
+
+        // 设置缩放
+        function setZoom(scale) {
+            zoomLevel = scale;
+            paper.scale(scale);
+            updateZoomDisplay();
+            log(`缩放设置为: ${Math.round(scale * 100)}%`);
+
+            // 延迟更新句柄以确保缩放完成
+            setTimeout(() => {
+                updateResizeHandles();
+            }, 50);
+        }
+
+        // 更新缩放显示
+        function updateZoomDisplay() {
+            document.getElementById('zoom-level').textContent = `缩放: ${Math.round(zoomLevel * 100)}%`;
+        }
+
+        // 日志函数
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('test-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : '';
+            logElement.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+            console.log(`[${timestamp}] ${message}`);
+        }
+
+        // 创建调整大小句柄
+        function createResizeHandles() {
+            removeResizeHandles();
+
+            if (!currentContainer) return;
+
+            const position = currentContainer.position();
+            const size = currentContainer.size();
+            const handleSize = 12;
+
+            // 创建左上角和右下角句柄
+            const directions = ['nw', 'se'];
+
+            directions.forEach(direction => {
+                const handle = document.createElement('div');
+                handle.className = `resize-handle resize-handle-${direction}`;
+                handle.style.width = `${handleSize}px`;
+                handle.style.height = `${handleSize}px`;
+
+                document.body.appendChild(handle);
+                resizeHandles.push(handle);
+            });
+
+            updateResizeHandles();
+            log(`创建了 ${directions.length} 个调整句柄`);
+        }
+
+        // 更新调整大小句柄位置
+        function updateResizeHandles() {
+            if (resizeHandles.length === 0 || !currentContainer) return;
+
+            const position = currentContainer.position();
+            const size = currentContainer.size();
+            const handleSize = 12;
+
+            log(`更新句柄位置 - 容器位置: (${position.x}, ${position.y}), 大小: (${size.width}, ${size.height}), 缩放: ${zoomLevel}`);
+
+            resizeHandles.forEach((handle, index) => {
+                const direction = index === 0 ? 'nw' : 'se';
+
+                let handleX, handleY;
+                if (direction === 'nw') {
+                    handleX = position.x;
+                    handleY = position.y;
+                } else {
+                    handleX = position.x + size.width;
+                    handleY = position.y + size.height;
+                }
+
+                // 转换为屏幕坐标
+                const screenPoint = getScreenCoordinates(handleX, handleY);
+
+                // 调整句柄位置，使其中心点对齐容器角点
+                const borderWidth = 2;
+                const totalVisualSize = handleSize + (borderWidth * 2);
+                const finalLeft = screenPoint.x - totalVisualSize / 2;
+                const finalTop = screenPoint.y - totalVisualSize / 2;
+
+                handle.style.left = `${finalLeft}px`;
+                handle.style.top = `${finalTop}px`;
+
+                log(`${direction} 句柄: SVG(${handleX}, ${handleY}) -> Screen(${screenPoint.x}, ${screenPoint.y}) -> Final(${finalLeft}, ${finalTop})`);
+
+                // 创建测试标记
+                if (showMarkers) {
+                    createTestMarker(screenPoint.x, screenPoint.y, direction);
+                }
+            });
+        }
+
+        // 获取屏幕坐标
+        function getScreenCoordinates(svgX, svgY) {
+            try {
+                // 使用JointJS Paper的内置方法（最可靠）
+                if (paper.localToPagePoint) {
+                    const pagePoint = paper.localToPagePoint(svgX, svgY);
+                    return { x: pagePoint.x, y: pagePoint.y };
+                }
+
+                // 备用方法：手动计算
+                const scale = zoomLevel;
+                const translate = paper.translate();
+                const paperRect = paper.el.getBoundingClientRect();
+
+                const transformedX = (svgX * scale) + translate.tx;
+                const transformedY = (svgY * scale) + translate.ty;
+
+                const screenX = paperRect.left + transformedX;
+                const screenY = paperRect.top + transformedY;
+
+                return { x: screenX, y: screenY };
+
+            } catch (error) {
+                log(`坐标转换错误: ${error.message}`, 'error');
+                return { x: 0, y: 0 };
+            }
+        }
+
+        // 移除调整大小句柄
+        function removeResizeHandles() {
+            resizeHandles.forEach(handle => {
+                if (handle.parentNode) {
+                    handle.parentNode.removeChild(handle);
+                }
+            });
+            resizeHandles = [];
+        }
+
+        // 创建测试标记
+        function createTestMarker(x, y, label) {
+            const marker = document.createElement('div');
+            marker.className = 'test-marker';
+            marker.style.left = `${x - 2}px`;
+            marker.style.top = `${y - 2}px`;
+            marker.title = `${label}: (${Math.round(x)}, ${Math.round(y)})`;
+            document.body.appendChild(marker);
+            testMarkers.push(marker);
+        }
+
+        // 清除测试标记
+        function clearTestMarkers() {
+            testMarkers.forEach(marker => {
+                if (marker.parentNode) {
+                    marker.parentNode.removeChild(marker);
+                }
+            });
+            testMarkers = [];
+        }
+
+        // 切换标记显示
+        function toggleMarkers() {
+            showMarkers = !showMarkers;
+            clearTestMarkers();
+            if (showMarkers) {
+                updateResizeHandles();
+                log('测试标记已启用');
+            } else {
+                log('测试标记已禁用');
+            }
+        }
+
+        // 自动测试
+        function runAutoTest() {
+            log('开始自动测试...', 'info');
+
+            // 创建容器
+            createContainer();
+            selectContainer();
+
+            const testZooms = [0.5, 0.75, 1, 1.25, 1.5, 2];
+            let testIndex = 0;
+
+            function runNextTest() {
+                if (testIndex >= testZooms.length) {
+                    log('自动测试完成！', 'info');
+                    document.getElementById('test-status').textContent = '自动测试完成 - 检查日志查看详细结果';
+                    return;
+                }
+
+                const zoom = testZooms[testIndex];
+                log(`测试缩放级别: ${Math.round(zoom * 100)}%`);
+                setZoom(zoom);
+
+                setTimeout(() => {
+                    // 验证句柄位置
+                    const position = currentContainer.position();
+                    const size = currentContainer.size();
+
+                    log(`验证 ${Math.round(zoom * 100)}% 缩放下的句柄位置:`);
+                    log(`  容器位置: (${position.x}, ${position.y})`);
+                    log(`  容器大小: (${size.width}, ${size.height})`);
+
+                    testIndex++;
+                    setTimeout(runNextTest, 1000);
+                }, 500);
+            }
+
+            runNextTest();
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', () => {
+            initCanvas();
+            log('测试页面已初始化');
+        });
+    </script>
+</body>
+</html>

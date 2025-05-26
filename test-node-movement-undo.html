@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node Movement Undo/Redo Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .test-step {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+        }
+        .test-step.success {
+            border-left-color: #28a745;
+            background-color: #d4edda;
+        }
+        .test-step.error {
+            border-left-color: #dc3545;
+            background-color: #f8d7da;
+        }
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover {
+            background: #0056b3;
+        }
+        .button.success {
+            background: #28a745;
+        }
+        .button.danger {
+            background: #dc3545;
+        }
+        .console-output {
+            background: #000;
+            color: #00ff00;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 10px;
+        }
+        .instructions {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        .position-info {
+            background: #fff3cd;
+            padding: 10px;
+            border-radius: 4px;
+            border-left: 4px solid #ffc107;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔄 Node Movement Undo/Redo Test</h1>
+    
+    <div class="test-container">
+        <h2>📋 Test Instructions</h2>
+        <div class="instructions">
+            <p><strong>This test verifies that node movement operations are properly tracked in the undo/redo system.</strong></p>
+            <p>Follow these steps to test the node movement tracking:</p>
+            <ol>
+                <li>Open the main application: <a href="index.html" target="_blank">Open JointJS Application</a></li>
+                <li>Run the automated test setup below</li>
+                <li>Manually test node movement and undo/redo functionality</li>
+                <li>Verify that nodes return to their exact previous positions</li>
+            </ol>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>🤖 Automated Test Setup</h2>
+        <p>Click the button below to set up the test scenario:</p>
+        <button class="button" onclick="setupTest()">Setup Test Nodes</button>
+        <button class="button success" onclick="testNodeMovement()">Test Node Movement</button>
+        <button class="button danger" onclick="testUndoRedo()">Test Undo/Redo</button>
+        
+        <div id="testOutput" class="console-output" style="display: none;"></div>
+        <div id="positionInfo" class="position-info" style="display: none;"></div>
+    </div>
+
+    <div class="test-container">
+        <h2>✋ Manual Test Steps</h2>
+        <div class="test-step">
+            <strong>Step 1:</strong> Create test nodes and connections
+            <ul>
+                <li>Create: Grouping, Decision, and Switch nodes</li>
+                <li>Create connections between them</li>
+                <li>Note their initial positions</li>
+            </ul>
+        </div>
+        
+        <div class="test-step">
+            <strong>Step 2:</strong> Test node movement
+            <ul>
+                <li>Drag the Grouping node to a new position</li>
+                <li>Drag the Decision node to a different position</li>
+                <li>Verify that movements are smooth and responsive</li>
+            </ul>
+        </div>
+        
+        <div class="test-step">
+            <strong>Step 3:</strong> Test undo functionality
+            <ul>
+                <li>Press Ctrl+Z to undo the Decision node movement</li>
+                <li>Verify that the Decision node returns to its exact previous position</li>
+                <li>Press Ctrl+Z again to undo the Grouping node movement</li>
+                <li>Verify that the Grouping node returns to its original position</li>
+            </ul>
+        </div>
+        
+        <div class="test-step">
+            <strong>Step 4:</strong> Test redo functionality
+            <ul>
+                <li>Press Ctrl+Y to redo the Grouping node movement</li>
+                <li>Press Ctrl+Y again to redo the Decision node movement</li>
+                <li>Verify that nodes move back to their moved positions</li>
+            </ul>
+        </div>
+
+        <div class="test-step">
+            <strong>Step 5:</strong> Test mixed operations
+            <ul>
+                <li>Delete a connection line</li>
+                <li>Move a node</li>
+                <li>Press Ctrl+Z twice to undo both operations</li>
+                <li>Verify that both the node position and connection are restored</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <h2>✅ Expected Results</h2>
+        <div class="test-step success">
+            <strong>✅ Node Movement Tracking:</strong> All node drag operations should be recorded in command history
+        </div>
+        <div class="test-step success">
+            <strong>✅ Precise Undo:</strong> Ctrl+Z should return nodes to their exact previous positions
+        </div>
+        <div class="test-step success">
+            <strong>✅ Precise Redo:</strong> Ctrl+Y should restore nodes to their moved positions
+        </div>
+        <div class="test-step success">
+            <strong>✅ Mixed Operations:</strong> Undo/redo should work correctly with other operations like connection deletion
+        </div>
+        <div class="test-step success">
+            <strong>✅ Multi-Selection:</strong> Multi-node movements should also be tracked and undoable
+        </div>
+    </div>
+
+    <script>
+        let testNodes = {};
+        let positionHistory = [];
+
+        function log(message, type = 'info') {
+            const output = document.getElementById('testOutput');
+            output.style.display = 'block';
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : type === 'success' ? '#51cf66' : '#00ff00';
+            output.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+
+        function updatePositionInfo(nodeId, position, label) {
+            const positionInfo = document.getElementById('positionInfo');
+            positionInfo.style.display = 'block';
+            positionInfo.innerHTML += `<div><strong>${label}:</strong> Node ${nodeId} at (${position.x.toFixed(1)}, ${position.y.toFixed(1)})</div>`;
+        }
+
+        function setupTest() {
+            log('Setting up test nodes...', 'info');
+            
+            const mainWindow = window.open('index.html', 'mainApp');
+            
+            setTimeout(() => {
+                try {
+                    if (mainWindow.app && mainWindow.app.graph) {
+                        log('✓ Main application detected', 'success');
+                        
+                        mainWindow.eval(`
+                            // Clear canvas
+                            app.graph.clear();
+                            console.log('Canvas cleared for movement test');
+                            
+                            // Create test nodes at specific positions
+                            const groupingNode = app.nodeManager.createNode('Grouping', 100, 100, { skipHistory: true });
+                            const decisionNode = app.nodeManager.createNode('Decision', 300, 100, { skipHistory: true });
+                            const switchNode = app.nodeManager.createNode('Switch', 500, 100, { skipHistory: true });
+                            
+                            // Create connections
+                            const link1 = new joint.shapes.standard.Link();
+                            link1.source({ id: groupingNode.id });
+                            link1.target({ id: decisionNode.id });
+                            link1.attr({
+                                line: {
+                                    stroke: '#333',
+                                    strokeWidth: 2,
+                                    targetMarker: {
+                                        type: 'path',
+                                        d: 'M 10 -5 0 0 10 5 z',
+                                        fill: '#333'
+                                    }
+                                }
+                            });
+                            link1.addTo(app.graph);
+                            
+                            const link2 = new joint.shapes.standard.Link();
+                            link2.source({ id: decisionNode.id });
+                            link2.target({ id: switchNode.id });
+                            link2.attr({
+                                line: {
+                                    stroke: '#333',
+                                    strokeWidth: 2,
+                                    targetMarker: {
+                                        type: 'path',
+                                        d: 'M 10 -5 0 0 10 5 z',
+                                        fill: '#333'
+                                    }
+                                }
+                            });
+                            link2.addTo(app.graph);
+                            
+                            // Store references for testing
+                            window.testNodes = { groupingNode, decisionNode, switchNode };
+                            window.testLinks = { link1, link2 };
+                            
+                            console.log('Test setup complete:', window.testNodes);
+                        `);
+                        
+                        log('✓ Test nodes and connections created', 'success');
+                        log('You can now test node movement and undo/redo functionality', 'info');
+                        
+                    } else {
+                        log('❌ Main application not ready. Please open index.html first.', 'error');
+                    }
+                } catch (error) {
+                    log('❌ Error setting up test: ' + error.message, 'error');
+                }
+            }, 1000);
+        }
+
+        function testNodeMovement() {
+            log('Testing programmatic node movement...', 'info');
+            
+            const mainWindow = window.open('', 'mainApp');
+            
+            try {
+                if (mainWindow.app && mainWindow.testNodes) {
+                    mainWindow.eval(`
+                        const { groupingNode, decisionNode } = window.testNodes;
+                        
+                        // Record initial positions
+                        const groupingInitial = groupingNode.position();
+                        const decisionInitial = decisionNode.position();
+                        
+                        console.log('Initial positions:');
+                        console.log('Grouping:', groupingInitial);
+                        console.log('Decision:', decisionInitial);
+                        
+                        // Move nodes programmatically
+                        groupingNode.position(150, 200);
+                        decisionNode.position(350, 200);
+                        
+                        const groupingNew = groupingNode.position();
+                        const decisionNew = decisionNode.position();
+                        
+                        console.log('New positions:');
+                        console.log('Grouping:', groupingNew);
+                        console.log('Decision:', decisionNew);
+                        
+                        // Store positions for testing
+                        window.testPositions = {
+                            groupingInitial,
+                            decisionInitial,
+                            groupingNew,
+                            decisionNew
+                        };
+                    `);
+                    
+                    log('✓ Nodes moved programmatically', 'success');
+                    log('Note: Programmatic moves may not trigger command history. Try manual dragging.', 'info');
+                } else {
+                    log('❌ Test nodes not found. Run setup first.', 'error');
+                }
+            } catch (error) {
+                log('❌ Node movement test failed: ' + error.message, 'error');
+            }
+        }
+
+        function testUndoRedo() {
+            log('Testing undo/redo functionality...', 'info');
+            
+            const mainWindow = window.open('', 'mainApp');
+            
+            try {
+                if (mainWindow.app && mainWindow.app.commandHistory) {
+                    mainWindow.eval(`
+                        // Check command history status
+                        const status = app.commandHistory.getStatus();
+                        console.log('Command history status:', status);
+                        
+                        if (status.canUndo) {
+                            console.log('Testing undo...');
+                            app.commandHistory.undo();
+                            
+                            setTimeout(() => {
+                                const newStatus = app.commandHistory.getStatus();
+                                console.log('After undo:', newStatus);
+                                
+                                if (newStatus.canRedo) {
+                                    console.log('Testing redo...');
+                                    app.commandHistory.redo();
+                                    
+                                    setTimeout(() => {
+                                        const finalStatus = app.commandHistory.getStatus();
+                                        console.log('After redo:', finalStatus);
+                                    }, 100);
+                                }
+                            }, 100);
+                        } else {
+                            console.log('No operations to undo. Try moving nodes manually first.');
+                        }
+                    `);
+                    
+                    log('✓ Undo/redo test executed', 'success');
+                    log('Check the main application console for detailed results', 'info');
+                } else {
+                    log('❌ Command history not available. Check main application.', 'error');
+                }
+            } catch (error) {
+                log('❌ Undo/redo test failed: ' + error.message, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

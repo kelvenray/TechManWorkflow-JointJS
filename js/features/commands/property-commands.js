@@ -196,6 +196,9 @@ class CreateLinkCommand extends BaseCommand {
         this.linkId = link.id;
         this.linkData = this.serializeLink(link);
 
+        // 检查源节点是否是Switch节点，添加标签
+        this.app.handleSwitchNodeConnection(link);
+
         console.log(`[CreateLinkCommand] 连接已创建: ${this.linkId}`);
         return link;
       }
@@ -243,6 +246,11 @@ class DeleteLinkCommand extends BaseCommand {
     try {
       const link = this.app.graph.getCell(this.linkData.id);
       if (link) {
+        // 清除选中状态（如果这个连接被选中）
+        if (this.app.state.selectedLink === link) {
+          this.app.state.selectedLink = null;
+        }
+
         link.remove();
         console.log(`[DeleteLinkCommand] 连接已删除: ${this.linkData.id}`);
       }
@@ -290,11 +298,14 @@ class BatchCommand extends BaseCommand {
 
   execute() {
     try {
+      console.log(`[BatchCommand] 开始执行批量命令，包含 ${this.commands.length} 个操作`);
       const results = [];
-      for (const command of this.commands) {
+      for (let i = 0; i < this.commands.length; i++) {
+        const command = this.commands[i];
+        console.log(`[BatchCommand] 执行第 ${i + 1} 个命令: ${command.constructor.name}`);
         results.push(command.execute());
       }
-      console.log(`[BatchCommand] 批量命令已执行，包含 ${this.commands.length} 个操作`);
+      console.log(`[BatchCommand] 批量命令已执行完成，包含 ${this.commands.length} 个操作`);
       return results;
     } catch (error) {
       console.error('[BatchCommand] 执行失败:', error);
@@ -304,11 +315,14 @@ class BatchCommand extends BaseCommand {
 
   undo() {
     try {
+      console.log(`[BatchCommand] 开始撤销批量命令，包含 ${this.commands.length} 个操作`);
       // 反向执行撤销
       for (let i = this.commands.length - 1; i >= 0; i--) {
-        this.commands[i].undo();
+        const command = this.commands[i];
+        console.log(`[BatchCommand] 撤销第 ${this.commands.length - i} 个命令: ${command.constructor.name}`);
+        command.undo();
       }
-      console.log(`[BatchCommand] 批量命令已撤销，包含 ${this.commands.length} 个操作`);
+      console.log(`[BatchCommand] 批量命令已撤销完成，包含 ${this.commands.length} 个操作`);
     } catch (error) {
       console.error('[BatchCommand] 撤销失败:', error);
       throw error;

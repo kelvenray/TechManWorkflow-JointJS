@@ -115,16 +115,50 @@ class ClipboardManager {
       this.pasteCount++;
       console.log(`[ClipboardManager] 已粘贴 ${pastedNodes.length} 个节点`);
 
-      // 选中粘贴的节点
-      if (pastedNodes.length === 1) {
-        // 单个节点使用单选
-        this.app.clearMultiSelection();
-        this.app.state.selectedElement = pastedNodes[0];
-      } else if (pastedNodes.length > 1) {
-        // 多个节点使用多选
-        this.app.clearSelection();
-        this.app.enableMultiSelection(pastedNodes);
-      }
+      // 清除原有选择状态（包括多选）
+      console.log(`[ClipboardManager] 清除原有选择状态 - 多选模式: ${this.app.state.multiSelection.enabled}, 选中节点数: ${this.app.state.multiSelection.selectedElements.length}`);
+      this.app.clearSelection();
+      this.app.clearMultiSelection();
+
+      // 确保所有节点都已添加到DOM中，然后应用选择
+      // 使用多重延迟确保DOM完全更新
+      const attemptSelection = (attempt = 1, maxAttempts = 5) => {
+        console.log(`[ClipboardManager] 尝试应用选择 (第${attempt}次)`);
+
+        // 获取当前图中的所有元素，找到最新添加的节点
+        const allElements = this.app.graph.getElements();
+        const elementCountBefore = allElements.length - pastedNodes.length;
+
+        // 获取最新添加的节点（假设它们是最后添加的）
+        const recentlyAddedNodes = allElements.slice(elementCountBefore);
+
+        console.log(`[ClipboardManager] 图中总元素: ${allElements.length}, 预期新增: ${pastedNodes.length}, 实际获取: ${recentlyAddedNodes.length}`);
+
+        // 验证这些节点是否有有效的视图
+        const validNodes = recentlyAddedNodes.filter(node => {
+          const view = this.app.paper.findViewByModel(node);
+          const hasView = view && view.el;
+          console.log(`[ClipboardManager] 节点 ${node.id} 视图状态:`, hasView);
+          return hasView;
+        });
+
+        console.log(`[ClipboardManager] 有效节点数量: ${validNodes.length}/${recentlyAddedNodes.length}`);
+
+        if (validNodes.length === 0 && attempt < maxAttempts) {
+          console.warn(`[ClipboardManager] 没有有效的节点视图，延迟重试 (${attempt}/${maxAttempts})`);
+          setTimeout(() => attemptSelection(attempt + 1, maxAttempts), 50 * attempt);
+          return;
+        }
+
+        if (validNodes.length > 0) {
+          this.applySelectionToNodes(validNodes);
+        } else {
+          console.error('[ClipboardManager] 无法找到有效的节点视图，选择应用失败');
+        }
+      };
+
+      // 开始尝试应用选择
+      setTimeout(() => attemptSelection(), 50);
 
       return pastedNodes;
 
@@ -346,6 +380,37 @@ class ClipboardManager {
       nodeCount: this.clipboard.length,
       pasteCount: this.pasteCount
     };
+  }
+
+  /**
+   * 应用选择到节点
+   * @param {Array} nodes 要选择的节点数组
+   */
+  applySelectionToNodes(nodes) {
+    try {
+      if (nodes.length === 1) {
+        // 单个节点使用单选
+        this.app.state.selectedElement = nodes[0];
+        console.log(`[ClipboardManager] 单个粘贴节点已选中: ${nodes[0].id}`);
+      } else if (nodes.length > 1) {
+        // 多个节点使用多选
+        this.app.enableMultiSelection(nodes);
+        console.log(`[ClipboardManager] ${nodes.length} 个粘贴节点已进入多选模式`);
+
+        // 验证多选高亮是否正确应用
+        setTimeout(() => {
+          nodes.forEach(node => {
+            const view = this.app.paper.findViewByModel(node);
+            if (view && view.el) {
+              const hasHighlight = view.el.classList.contains('multi-selection-highlight');
+              console.log(`[ClipboardManager] 节点 ${node.id} 高亮状态:`, hasHighlight);
+            }
+          });
+        }, 50);
+      }
+    } catch (error) {
+      console.error('[ClipboardManager] 应用选择失败:', error);
+    }
   }
 }
 

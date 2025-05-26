@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>复制粘贴行为测试</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .test-container {
+            width: 100%;
+            height: 500px;
+            border: 1px solid #ccc;
+            position: relative;
+            margin-bottom: 20px;
+        }
+        
+        .instructions {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f0f8ff;
+            border-radius: 5px;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .test-steps {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 5px;
+        }
+        
+        .test-steps h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .test-steps ol {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .test-steps li {
+            margin: 8px 0;
+            line-height: 1.4;
+        }
+        
+        .expected-behavior {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #e8f5e8;
+            border-radius: 5px;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .controls {
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: #fff3cd;
+            border-radius: 5px;
+            border-left: 4px solid #ffc107;
+        }
+        
+        .controls button {
+            margin: 5px;
+            padding: 8px 16px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .controls button:hover {
+            background-color: #0056b3;
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <h2>📋 复制粘贴行为测试</h2>
+        <p><strong>测试目标：</strong>验证多选节点复制粘贴后，选择状态正确转移到新粘贴的节点</p>
+    </div>
+    
+    <div class="controls">
+        <button onclick="createTestNodes()">创建测试节点</button>
+        <button onclick="selectAllNodes()">全选节点</button>
+        <button onclick="copyNodes()">复制选中节点</button>
+        <button onclick="pasteNodes()">粘贴节点</button>
+        <button onclick="clearCanvas()">清空画布</button>
+    </div>
+    
+    <div class="test-steps">
+        <h3>🧪 测试步骤</h3>
+        <ol>
+            <li><strong>创建节点：</strong>点击"创建测试节点"按钮创建几个测试节点</li>
+            <li><strong>多选节点：</strong>使用矩形选择或Ctrl+点击选择多个节点（观察蓝色边框）</li>
+            <li><strong>复制节点：</strong>按Ctrl+C或点击"复制选中节点"按钮</li>
+            <li><strong>粘贴节点：</strong>按Ctrl+V或点击"粘贴节点"按钮</li>
+            <li><strong>观察结果：</strong>检查选择状态是否正确转移</li>
+        </ol>
+    </div>
+    
+    <div class="test-container" id="paper-container"></div>
+    
+    <div class="expected-behavior">
+        <h3>✅ 预期行为</h3>
+        <ul>
+            <li><strong>粘贴前：</strong>原始节点有蓝色多选边框高亮</li>
+            <li><strong>粘贴后：</strong>原始节点的蓝色边框消失</li>
+            <li><strong>粘贴后：</strong>新粘贴的节点显示蓝色多选边框</li>
+            <li><strong>视觉过渡：</strong>选择状态平滑转移，无闪烁</li>
+            <li><strong>单个节点：</strong>粘贴单个节点时使用单选模式</li>
+            <li><strong>多个节点：</strong>粘贴多个节点时使用多选模式</li>
+        </ul>
+    </div>
+
+    <!-- 引入必要的库 -->
+    <script src="lib/jquery.min.js"></script>
+    <script src="lib/lodash.min.js"></script>
+    <script src="lib/backbone.min.js"></script>
+    <script src="lib/jointjs/joint.min.js"></script>
+    
+    <!-- 引入应用文件 -->
+    <script src="js/config.js"></script>
+    <script src="js/utils/error-handler.js"></script>
+    <script src="js/utils/event-manager.js"></script>
+    <script src="js/features/command-history.js"></script>
+    <script src="js/features/commands/node-commands.js"></script>
+    <script src="js/features/commands/property-commands.js"></script>
+    <script src="js/features/clipboard-manager.js"></script>
+    <script src="js/features/node-manager.js"></script>
+    <script src="js/core/graph.js"></script>
+    
+    <script>
+        let testApp;
+        
+        // 初始化测试应用
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                initTestApp();
+                console.log('复制粘贴测试应用已启动');
+            } catch (error) {
+                console.error('测试应用启动失败:', error);
+            }
+        });
+        
+        function initTestApp() {
+            // 创建图形和画布
+            const graph = new joint.dia.Graph();
+            const paper = new joint.dia.Paper({
+                el: document.getElementById('paper-container'),
+                model: graph,
+                width: '100%',
+                height: 500,
+                gridSize: 10,
+                drawGrid: true,
+                background: {
+                    color: 'rgba(240, 248, 255, 0.5)'
+                }
+            });
+            
+            // 创建简化的应用实例
+            testApp = new WorkflowApp(paper.el, {
+                skipFullInit: true
+            });
+            
+            console.log('测试应用初始化完成');
+        }
+        
+        function createTestNodes() {
+            if (!testApp) return;
+            
+            // 清空现有节点
+            testApp.graph.clear();
+            
+            // 创建测试节点
+            const nodes = [
+                { x: 100, y: 100, text: '节点A', color: '#ffeb3b' },
+                { x: 250, y: 120, text: '节点B', color: '#4caf50' },
+                { x: 400, y: 140, text: '节点C', color: '#2196f3' },
+                { x: 150, y: 250, text: '节点D', color: '#ff9800' }
+            ];
+            
+            nodes.forEach(nodeData => {
+                const node = new joint.shapes.standard.Rectangle({
+                    position: { x: nodeData.x, y: nodeData.y },
+                    size: { width: 100, height: 50 },
+                    attrs: {
+                        body: {
+                            fill: nodeData.color,
+                            stroke: '#333333',
+                            strokeWidth: 2,
+                            rx: 8,
+                            ry: 8
+                        },
+                        label: {
+                            text: nodeData.text,
+                            fontSize: 14,
+                            fontFamily: 'Arial',
+                            fill: '#333333',
+                            fontWeight: 'bold'
+                        }
+                    }
+                });
+                
+                testApp.graph.addCell(node);
+            });
+            
+            console.log('测试节点已创建');
+        }
+        
+        function selectAllNodes() {
+            if (!testApp) return;
+            
+            const elements = testApp.graph.getElements();
+            if (elements.length > 0) {
+                testApp.clearSelection();
+                testApp.enableMultiSelection(elements);
+                console.log(`已选择 ${elements.length} 个节点`);
+            }
+        }
+        
+        function copyNodes() {
+            if (!testApp || !testApp.clipboardManager) return;
+            
+            const result = testApp.clipboardManager.copy();
+            if (result) {
+                console.log('节点复制成功');
+            } else {
+                console.log('节点复制失败或无选中节点');
+            }
+        }
+        
+        function pasteNodes() {
+            if (!testApp || !testApp.clipboardManager) return;
+            
+            const result = testApp.clipboardManager.paste();
+            if (result) {
+                console.log('节点粘贴成功');
+            } else {
+                console.log('节点粘贴失败或剪贴板为空');
+            }
+        }
+        
+        function clearCanvas() {
+            if (!testApp) return;
+            
+            testApp.graph.clear();
+            testApp.clearSelection();
+            testApp.clearMultiSelection();
+            console.log('画布已清空');
+        }
+        
+        // 键盘快捷键支持
+        document.addEventListener('keydown', (evt) => {
+            if (!testApp) return;
+            
+            if (evt.ctrlKey || evt.metaKey) {
+                switch (evt.key.toLowerCase()) {
+                    case 'c':
+                        evt.preventDefault();
+                        copyNodes();
+                        break;
+                    case 'v':
+                        evt.preventDefault();
+                        pasteNodes();
+                        break;
+                    case 'a':
+                        evt.preventDefault();
+                        selectAllNodes();
+                        break;
+                }
+            }
+        });
+    </script>
+</body>
+</html>

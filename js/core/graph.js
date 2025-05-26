@@ -55,6 +55,7 @@ class WorkflowApp {
       draggedElement: null,
       isDragging: false,
       draggedNode: null,
+      dragInitialPosition: null, // 记录拖拽开始时的节点位置，用于移动命令历史
       hoveredContainer: null,
       originalContainer: null, // 记录拖拽前的原始容器
 
@@ -454,8 +455,27 @@ class WorkflowApp {
        // JointJS工具会自动处理位置更新
        // this.paper.getDefaultTools(); // 或根据需要更新特定工具
 
-       // 更新调整大小句柄位置
-       this.updateResizeHandles();
+       // 确保缩放级别状态同步
+       const currentScale = this.paper.scale();
+       if (currentScale && currentScale.sx) {
+         this.state.zoomLevel = currentScale.sx;
+       }
+
+       console.log(`[scale translate] 缩放/平移事件触发, 新缩放级别: ${this.state.zoomLevel}, 平移: (${this.paper.translate().tx}, ${this.paper.translate().ty})`);
+
+       // 使用双重延迟确保变换完全应用
+       requestAnimationFrame(() => {
+         // 再次确保状态同步
+         const latestScale = this.paper.scale();
+         if (latestScale && latestScale.sx) {
+           this.state.zoomLevel = latestScale.sx;
+         }
+
+         // 延迟更新句柄位置，确保所有变换都已应用
+         setTimeout(() => {
+           this.updateResizeHandles();
+         }, 10);
+       });
     });
     // 画布空白区域点击事件
     /**
@@ -701,6 +721,15 @@ class WorkflowApp {
       this.state.isDragging = true;
       this.state.draggedNode = element;
 
+      // 记录节点的初始位置，用于移动命令历史
+      const currentPosition = element.position();
+      this.state.dragInitialPosition = {
+        x: currentPosition.x,
+        y: currentPosition.y
+      };
+
+      console.log(`[handleElementPointerDown] 记录节点 ${element.id} 初始位置:`, this.state.dragInitialPosition);
+
       // 如果拖拽的是嵌套在容器中的节点，先将其从容器中移除
       // 这样可以防止拖拽时容器跟着移动
       if (!element.isContainer) {
@@ -728,15 +757,70 @@ class WorkflowApp {
       setTimeout(() => {
         this.handleContainerEmbedding(element);
       }, 10);
+
+      // 记录节点移动到命令历史
+      this.recordNodeMovement(element);
     }
 
     // 清除拖拽状态
     this.state.isDragging = false;
     this.state.draggedNode = null;
+    this.state.dragInitialPosition = null; // 清除初始位置记录
     this.state.originalContainer = null; // 清除原始容器记录
     this.clearContainerHighlight();
 
     console.log('结束拖拽节点:', element.id);
+  }
+
+  /**
+   * 记录节点移动到命令历史
+   * @param {joint.dia.Element} element
+   */
+  recordNodeMovement(element) {
+    // 检查是否有初始位置记录和命令历史系统
+    if (!this.state.dragInitialPosition ||
+        !this.commandHistory ||
+        this.commandHistory.isExecutingCommand() ||
+        typeof MoveNodeCommand === 'undefined') {
+      console.log('[recordNodeMovement] 跳过记录 - 缺少必要条件');
+      return;
+    }
+
+    const currentPosition = element.position();
+    const initialPosition = this.state.dragInitialPosition;
+
+    // 检查位置是否真的发生了变化（避免记录无意义的移动）
+    const deltaX = Math.abs(currentPosition.x - initialPosition.x);
+    const deltaY = Math.abs(currentPosition.y - initialPosition.y);
+    const minMovement = 1; // 最小移动距离阈值
+
+    if (deltaX < minMovement && deltaY < minMovement) {
+      console.log(`[recordNodeMovement] 节点 ${element.id} 移动距离太小，跳过记录`);
+      return;
+    }
+
+    try {
+      // 创建移动命令但不执行（因为移动已经完成）
+      const moveCommand = new MoveNodeCommand(this, element, initialPosition, currentPosition);
+
+      // 直接添加到历史记录
+      this.commandHistory.undoStack.push(moveCommand);
+
+      // 清空重做栈
+      this.commandHistory.redoStack = [];
+
+      // 限制历史记录大小
+      if (this.commandHistory.undoStack.length > this.commandHistory.maxSize) {
+        this.commandHistory.undoStack.shift();
+      }
+
+      console.log(`[recordNodeMovement] 节点 ${element.id} 移动已记录到命令历史`);
+      console.log(`[recordNodeMovement] 从 (${initialPosition.x}, ${initialPosition.y}) 移动到 (${currentPosition.x}, ${currentPosition.y})`);
+      console.log(`[CommandHistory] 撤销栈大小: ${this.commandHistory.undoStack.length}, 重做栈大小: ${this.commandHistory.redoStack.length}`);
+
+    } catch (error) {
+      console.error('[recordNodeMovement] 记录移动命令失败:', error);
+    }
   }
 
   /**
@@ -1124,6 +1208,40 @@ class WorkflowApp {
 
     // 检查源节点是否是Switch节点，添加标签
     this.handleSwitchNodeConnection(link);
+
+    // 将连接创建添加到命令历史（如果不是在执行命令过程中）
+    if (this.commandHistory &&
+        !this.commandHistory.isExecutingCommand() &&
+        typeof CreateLinkCommand !== 'undefined') {
+
+      const source = link.get('source');
+      const target = link.get('target');
+
+      if (source.id && target.id) {
+        // 创建一个虚拟的CreateLinkCommand来记录这个操作，但不执行它
+        // 因为连接已经被JointJS创建了，我们只需要记录历史以便撤销
+        const createLinkCommand = new CreateLinkCommand(this, source.id, target.id, source.port, target.port);
+
+        // 手动设置命令的linkId和linkData，因为连接已经存在
+        createLinkCommand.linkId = link.id;
+        createLinkCommand.linkData = createLinkCommand.serializeLink(link);
+
+        // 直接添加到历史记录，不执行命令
+        this.commandHistory.undoStack.push(createLinkCommand);
+
+        // 清空重做栈
+        this.commandHistory.redoStack = [];
+
+        // 限制历史记录大小
+        if (this.commandHistory.undoStack.length > this.commandHistory.maxSize) {
+          this.commandHistory.undoStack.shift();
+        }
+
+        console.log('[handleLinkConnect] 连接创建已添加到命令历史');
+        console.log(`[CommandHistory] 命令已记录: CreateLinkCommand`);
+        console.log(`[CommandHistory] 撤销栈大小: ${this.commandHistory.undoStack.length}, 重做栈大小: ${this.commandHistory.redoStack.length}`);
+      }
+    }
   }
 
   /**
@@ -1184,7 +1302,7 @@ class WorkflowApp {
     }
 
     try {
-      // 创建连接线删除工具
+      // 创建连接线删除工具 - 使用命令历史系统
       const deleteTool = new joint.linkTools.Remove({
         focusOpacity: 0.5,
         distance: '50%', // 位于连接线中间位置
@@ -1209,7 +1327,25 @@ class WorkflowApp {
               'pointer-events': 'none'
             }
           }
-        ]
+        ],
+        // 自定义删除行为，使用命令历史系统
+        action: (evt) => {
+          evt.stopPropagation();
+
+          // 使用命令历史系统删除连接线
+          if (this.commandHistory && typeof DeleteLinkCommand !== 'undefined') {
+            const deleteLinkCommand = new DeleteLinkCommand(this, link);
+            this.commandHistory.executeCommand(deleteLinkCommand);
+            console.log('[LinkDeleteTool] 使用命令历史删除连接线:', link.id);
+          } else {
+            // 备用方案：直接删除
+            link.remove();
+            console.log('[LinkDeleteTool] 直接删除连接线:', link.id);
+          }
+
+          // 清除选中状态
+          this.state.selectedLink = null;
+        }
       });
 
       // 创建工具集合
@@ -1849,11 +1985,8 @@ class WorkflowApp {
         handleY = position.y + size.height;
       }
 
-      // 将SVG坐标转换为页面坐标
-      const svgPoint = this.paper.svg.createSVGPoint();
-      svgPoint.x = handleX;
-      svgPoint.y = handleY;
-      const screenPoint = svgPoint.matrixTransform(this.paper.svg.getScreenCTM());
+      // 使用更可靠的坐标转换方法
+      const screenPoint = this.getScreenCoordinates(handleX, handleY);
 
       // 调整句柄位置，使其中心点精确对齐容器角点
       // 考虑边框：总视觉大小 = handleSize + 2px边框 * 2 = handleSize + 4px
@@ -1865,7 +1998,7 @@ class WorkflowApp {
       handle.style.left = `${finalLeft}px`;
       handle.style.top = `${finalTop}px`;
 
-      console.log(`[createResizeHandles] ${direction} handle positioned - Corner: (${screenPoint.x}, ${screenPoint.y}), Handle: (${finalLeft}, ${finalTop})`);
+      console.log(`[createResizeHandles] ${direction} handle positioned - Corner: (${screenPoint.x}, ${screenPoint.y}), Handle: (${finalLeft}, ${finalTop}), Zoom: ${this.state.zoomLevel || 1}`);
 
       // 添加悬停效果
       handle.onmouseenter = function() {
@@ -1983,6 +2116,74 @@ class WorkflowApp {
   }
 
   /**
+   * 获取屏幕坐标 - 可靠的坐标转换方法，正确处理缩放
+   * @param {number} svgX - SVG坐标系中的X坐标
+   * @param {number} svgY - SVG坐标系中的Y坐标
+   * @returns {Object} 包含x和y的屏幕坐标对象
+   */
+  getScreenCoordinates(svgX, svgY) {
+    try {
+      // 方法1: 使用JointJS Paper的内置方法（最可靠）
+      if (this.paper.localToPagePoint) {
+        const pagePoint = this.paper.localToPagePoint(svgX, svgY);
+        console.log(`[getScreenCoordinates] JointJS方法 SVG(${svgX}, ${svgY}) -> Screen(${pagePoint.x}, ${pagePoint.y})`);
+        return { x: pagePoint.x, y: pagePoint.y };
+      }
+
+      // 方法2: 使用SVG变换矩阵（备用方案）
+      const svgPoint = this.paper.svg.createSVGPoint();
+      svgPoint.x = svgX;
+      svgPoint.y = svgY;
+
+      // 强制刷新并获取最新的变换矩阵
+      this.paper.svg.getBoundingClientRect();
+      const ctm = this.paper.svg.getScreenCTM();
+
+      if (ctm) {
+        const screenPoint = svgPoint.matrixTransform(ctm);
+        console.log(`[getScreenCoordinates] SVG矩阵方法 SVG(${svgX}, ${svgY}) -> Screen(${screenPoint.x}, ${screenPoint.y}), CTM: scale(${ctm.a}, ${ctm.d}), translate(${ctm.e}, ${ctm.f})`);
+        return { x: screenPoint.x, y: screenPoint.y };
+      }
+
+      throw new Error('无法获取变换矩阵');
+
+    } catch (error) {
+      console.warn('[getScreenCoordinates] 标准方法失败，使用精确手动计算:', error);
+
+      // 方法3: 精确的手动计算（最后备用方案）
+      try {
+        // 获取当前真实的缩放和平移值
+        const currentScale = this.paper.scale();
+        const scale = currentScale ? currentScale.sx : (this.state.zoomLevel || 1);
+        const translate = this.paper.translate();
+        const paperRect = this.paper.el.getBoundingClientRect();
+
+        // 精确计算：考虑JointJS的变换顺序和原点
+        // JointJS变换: translate(tx, ty) scale(sx, sy)
+        const transformedX = (svgX * scale) + translate.tx;
+        const transformedY = (svgY * scale) + translate.ty;
+
+        const screenX = paperRect.left + transformedX;
+        const screenY = paperRect.top + transformedY;
+
+        console.log(`[getScreenCoordinates] 精确手动计算 SVG(${svgX}, ${svgY}) -> Screen(${screenX}, ${screenY}), scale: ${scale}, translate: (${translate.tx}, ${translate.ty}), paperRect: (${paperRect.left}, ${paperRect.top})`);
+        return { x: screenX, y: screenY };
+
+      } catch (fallbackError) {
+        console.error('[getScreenCoordinates] 所有方法都失败:', fallbackError);
+
+        // 最简单的备用方案
+        const paperRect = this.paper.el.getBoundingClientRect();
+        const scale = this.state.zoomLevel || 1;
+        return {
+          x: paperRect.left + (svgX * scale),
+          y: paperRect.top + (svgY * scale)
+        };
+      }
+    }
+  }
+
+  /**
    * 更新调整句柄位置
    */
   updateResizeHandles() {
@@ -1991,6 +2192,7 @@ class WorkflowApp {
         !this.state.selectedElement.isContainer ||
         !this.state.selectedElement.isResizable ||
         this.state.resizeHandles.length === 0) {
+      console.log('[updateResizeHandles] 跳过更新 - 没有选中的可调整大小容器或句柄');
       return;
     }
 
@@ -1999,33 +2201,59 @@ class WorkflowApp {
     const size = container.size();
     const handleSize = CONFIG.ui.resizeHandleSize || 12;
 
+    // 获取当前真实的缩放和平移状态
+    const currentScale = this.paper.scale();
+    const actualScale = currentScale ? currentScale.sx : (this.state.zoomLevel || 1);
+    const translate = this.paper.translate();
+
+    console.log(`[updateResizeHandles] 开始更新句柄:`);
+    console.log(`  - 容器: ${container.id}`);
+    console.log(`  - 位置: (${position.x}, ${position.y})`);
+    console.log(`  - 大小: (${size.width}, ${size.height})`);
+    console.log(`  - 缩放: ${actualScale} (状态: ${this.state.zoomLevel})`);
+    console.log(`  - 平移: (${translate.tx}, ${translate.ty})`);
+    console.log(`  - 句柄数量: ${this.state.resizeHandles.length}`);
+
     this.state.resizeHandles.forEach((handle, index) => {
-      const direction = index === 0 ? 'nw' : 'se';
+      try {
+        const direction = index === 0 ? 'nw' : 'se';
 
-      let handleX, handleY;
-      if (direction === 'nw') {
-        // 左上角：容器左上角位置
-        handleX = position.x;
-        handleY = position.y;
-      } else {
-        // 右下角：容器右下角位置
-        handleX = position.x + size.width;
-        handleY = position.y + size.height;
+        let handleX, handleY;
+        if (direction === 'nw') {
+          // 左上角：容器左上角位置
+          handleX = position.x;
+          handleY = position.y;
+        } else {
+          // 右下角：容器右下角位置
+          handleX = position.x + size.width;
+          handleY = position.y + size.height;
+        }
+
+        // 使用更可靠的坐标转换方法
+        const screenPoint = this.getScreenCoordinates(handleX, handleY);
+
+        // 调整句柄位置，使其中心点精确对齐容器角点
+        // 考虑边框：总视觉大小 = handleSize + 2px边框 * 2 = handleSize + 4px
+        const borderWidth = 2;
+        const totalVisualSize = handleSize + (borderWidth * 2);
+        const finalLeft = screenPoint.x - totalVisualSize / 2;
+        const finalTop = screenPoint.y - totalVisualSize / 2;
+
+        // 应用位置
+        handle.style.left = `${finalLeft}px`;
+        handle.style.top = `${finalTop}px`;
+
+        console.log(`[updateResizeHandles] ${direction} 句柄已更新:`);
+        console.log(`  - SVG坐标: (${handleX}, ${handleY})`);
+        console.log(`  - 屏幕坐标: (${screenPoint.x}, ${screenPoint.y})`);
+        console.log(`  - 最终位置: (${finalLeft}, ${finalTop})`);
+
+      } catch (error) {
+        console.error(`[updateResizeHandles] 更新句柄 ${index} 时出错:`, error);
       }
-
-      // 将SVG坐标转换为页面坐标
-      const svgPoint = this.paper.svg.createSVGPoint();
-      svgPoint.x = handleX;
-      svgPoint.y = handleY;
-      const screenPoint = svgPoint.matrixTransform(this.paper.svg.getScreenCTM());
-
-      // 调整句柄位置，使其中心点精确对齐容器角点
-      // 考虑边框：总视觉大小 = handleSize + 2px边框 * 2 = handleSize + 4px
-      const borderWidth = 2;
-      const totalVisualSize = handleSize + (borderWidth * 2);
-      handle.style.left = `${screenPoint.x - totalVisualSize / 2}px`;
-      handle.style.top = `${screenPoint.y - totalVisualSize / 2}px`;
     });
+
+    console.log('[updateResizeHandles] 句柄位置更新完成');
   }
 
   /**
@@ -2296,13 +2524,15 @@ class WorkflowApp {
    */
   clearMultiSelection() {
     if (!this.state.multiSelection.enabled) {
+      console.log('[MultiSelection] 清除多选 - 多选模式未启用');
       return;
     }
 
-    console.log('[MultiSelection] 清除多选');
+    console.log('[MultiSelection] 清除多选 - 当前选中节点数:', this.state.multiSelection.selectedElements.length);
 
     // 移除所有高亮
     this.state.multiSelection.selectedElements.forEach(element => {
+      console.log('[MultiSelection] 移除节点高亮:', element.id);
       this.removeMultiSelectionHighlight(element);
     });
 
@@ -2316,6 +2546,8 @@ class WorkflowApp {
 
     // 移除选择矩形（如果存在）
     this.removeSelectionRectangle();
+
+    console.log('[MultiSelection] 多选状态已清除');
   }
 
   // ==================== 多选视觉反馈方法 ====================
@@ -2439,9 +2671,12 @@ class WorkflowApp {
    */
   addMultiSelectionHighlight(element) {
     const elementView = this.paper.findViewByModel(element);
-    if (elementView) {
+    if (elementView && elementView.el) {
       // 添加蓝色边框高亮
       elementView.el.classList.add('multi-selection-highlight');
+      console.log(`[MultiSelection] 节点 ${element.id} 高亮已添加`);
+    } else {
+      console.warn(`[MultiSelection] 无法为节点添加高亮，找不到视图或元素: ${element.id}`);
     }
   }
 
@@ -2451,8 +2686,12 @@ class WorkflowApp {
    */
   removeMultiSelectionHighlight(element) {
     const elementView = this.paper.findViewByModel(element);
-    if (elementView) {
+    if (elementView && elementView.el) {
+      const hadHighlight = elementView.el.classList.contains('multi-selection-highlight');
       elementView.el.classList.remove('multi-selection-highlight');
+      console.log(`[MultiSelection] 节点 ${element.id} 高亮移除 - 之前有高亮: ${hadHighlight}`);
+    } else {
+      console.warn(`[MultiSelection] 无法找到节点视图或元素: ${element.id}`);
     }
   }
 

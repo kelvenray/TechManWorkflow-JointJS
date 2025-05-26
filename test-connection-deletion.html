@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connection Deletion Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .test-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            max-width: 800px;
+        }
+        .test-step {
+            margin: 10px 0;
+            padding: 10px;
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #d1ecf1;
+            border: 1px solid #bee5eb;
+            color: #0c5460;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .command-history {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🔗 Connection Line Deletion Test</h1>
+        <p>This test verifies that connection line deletions are properly tracked in the command history system.</p>
+        
+        <div class="test-step">
+            <h3>Test Scenario</h3>
+            <ol>
+                <li>Create three nodes and connect them</li>
+                <li>Delete one connection line</li>
+                <li>Press Ctrl+Z to undo</li>
+                <li>Verify only the connection is restored (no duplicate nodes)</li>
+            </ol>
+        </div>
+
+        <div class="test-step">
+            <h3>Manual Test Instructions</h3>
+            <ol>
+                <li>Open the main application: <a href="http://localhost:8000" target="_blank">http://localhost:8000</a></li>
+                <li>Create a Grouping node, Decision node (决策), and Switch node</li>
+                <li>Connect Grouping → Decision → Switch</li>
+                <li>Select and delete the Grouping → Decision connection line</li>
+                <li>Press Ctrl+Z to undo</li>
+                <li>Check that only the connection line is restored</li>
+            </ol>
+        </div>
+
+        <div class="test-result info">
+            <h3>🔧 Fix Applied</h3>
+            <p><strong>Problem:</strong> Connection line deletions were not being tracked in the command history, causing undo operations to revert to incorrect states.</p>
+            <p><strong>Solution:</strong></p>
+            <ul>
+                <li>✅ Modified <code>deleteSelectedElements()</code> to use <code>DeleteLinkCommand</code></li>
+                <li>✅ Updated link delete tool to use command history system</li>
+                <li>✅ Enhanced <code>handleLinkConnect()</code> to track connection creation</li>
+                <li>✅ Improved <code>CreateLinkCommand</code> and <code>DeleteLinkCommand</code> for proper state management</li>
+            </ul>
+        </div>
+
+        <div class="test-result success">
+            <h3>✅ Expected Behavior After Fix</h3>
+            <ul>
+                <li>Connection line deletions are recorded as separate commands in history</li>
+                <li>Undo operations correctly restore only the deleted connection</li>
+                <li>No duplicate nodes are created during undo</li>
+                <li>Command history maintains proper sequence of operations</li>
+                <li>Both keyboard deletion (Delete key) and delete tool work correctly</li>
+            </ul>
+        </div>
+
+        <div class="command-history">
+            <h4>Command History Debug Info</h4>
+            <p>When testing, check the browser console for these log messages:</p>
+            <pre>
+[DeleteLinkCommand] 连接已删除: [link-id]
+[CommandHistory] 命令已执行: DeleteLinkCommand
+[CommandHistory] 已撤销: DeleteLinkCommand
+[CreateLinkCommand] 连接已创建: [link-id]
+            </pre>
+        </div>
+
+        <div class="test-step">
+            <h3>🧪 Additional Test Cases</h3>
+            <ul>
+                <li><strong>Mixed Operations:</strong> Create nodes → Create connections → Delete connection → Delete node → Undo all</li>
+                <li><strong>Multiple Connections:</strong> Delete multiple connections and undo each individually</li>
+                <li><strong>Switch Node Connections:</strong> Test with Switch node connections that have labels</li>
+                <li><strong>Container Connections:</strong> Test connections involving container nodes</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // Add some interactive functionality for testing
+        console.log('🔗 Connection Deletion Test Page Loaded');
+        console.log('📋 Test the main application at: http://localhost:8000');
+        console.log('🔍 Check browser console for command history debug messages');
+        
+        // Monitor for keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'z') {
+                console.log('🔄 Ctrl+Z detected - Check if undo works correctly');
+            }
+            if (e.ctrlKey && e.key === 'y') {
+                console.log('🔄 Ctrl+Y detected - Check if redo works correctly');
+            }
+        });
+    </script>
+</body>
+</html>

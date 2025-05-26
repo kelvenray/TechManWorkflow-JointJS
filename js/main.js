@@ -48,6 +48,9 @@ async function initWorkflowApp() {
       console.log('5. 按 Ctrl+Z 撤销操作');
       console.log('6. 按 Ctrl+Y 重做操作');
       console.log('7. 或在控制台运行: WorkflowAPI.checkUndoRedoCopyPasteStatus()');
+
+      // 应用初始化完成，添加内置测试功能
+      setupBuiltInTesting();
     }, 1000);
 
   } catch (error) {
@@ -152,6 +155,8 @@ function initEventHandlers() {
         e.preventDefault();
       }
     });
+
+
 
     console.log('事件处理器初始化完成');
 
@@ -317,7 +322,14 @@ function deleteSelectedElements() {
 
     // 删除选中的连接线
     if (workflowApp.state.selectedLink) {
-      workflowApp.state.selectedLink.remove();
+      // 使用命令历史系统删除连接线
+      if (workflowApp.commandHistory && typeof DeleteLinkCommand !== 'undefined') {
+        const deleteLinkCommand = new DeleteLinkCommand(workflowApp, workflowApp.state.selectedLink);
+        workflowApp.commandHistory.executeCommand(deleteLinkCommand);
+      } else {
+        // 备用方案：直接删除
+        workflowApp.state.selectedLink.remove();
+      }
       workflowApp.state.selectedLink = null;
       console.log('删除选中的连接线');
     }
@@ -352,21 +364,31 @@ function deleteMultiSelectedElements() {
 
     // 创建批量删除命令
     const nodeManager = new NodeManager(workflowApp);
-    const commands = [];
 
-    elementsToDelete.forEach(element => {
-      if (typeof DeleteNodeCommand !== 'undefined') {
-        const deleteCommand = new DeleteNodeCommand(workflowApp, element);
-        commands.push(deleteCommand);
-      }
-    });
-
-    // 执行批量命令
-    if (commands.length > 0 &&
+    // 使用专门的多节点删除命令而不是批量命令
+    if (elementsToDelete.length > 0 &&
         workflowApp.commandHistory &&
-        typeof BatchCommand !== 'undefined') {
-      const batchCommand = new BatchCommand(workflowApp, commands, `删除 ${commands.length} 个节点`);
-      workflowApp.commandHistory.executeCommand(batchCommand);
+        typeof MultiNodeDeleteCommand !== 'undefined') {
+      const multiDeleteCommand = new MultiNodeDeleteCommand(workflowApp, elementsToDelete);
+      workflowApp.commandHistory.executeCommand(multiDeleteCommand);
+    } else if (elementsToDelete.length > 0 &&
+               workflowApp.commandHistory &&
+               typeof BatchCommand !== 'undefined') {
+      // 备用方案：使用批量命令，但确保所有节点状态在删除前都被正确捕获
+      const commands = [];
+
+      // 预先捕获所有节点的状态，避免在删除过程中状态丢失
+      elementsToDelete.forEach(element => {
+        if (typeof DeleteNodeCommand !== 'undefined') {
+          const deleteCommand = new DeleteNodeCommand(workflowApp, element);
+          commands.push(deleteCommand);
+        }
+      });
+
+      if (commands.length > 0) {
+        const batchCommand = new BatchCommand(workflowApp, commands, `删除 ${commands.length} 个节点`);
+        workflowApp.commandHistory.executeCommand(batchCommand);
+      }
     } else {
       // 如果命令系统不可用，直接删除
       elementsToDelete.forEach(element => {
@@ -635,21 +657,32 @@ function pasteNodes() {
 function checkUndoRedoCopyPasteStatus() {
   if (!workflowApp) {
     console.log('❌ 应用未初始化');
-    return;
+    return null;
   }
 
   console.log('🔍 检查撤销/重做和复制/粘贴功能状态:');
 
+  const status = {
+    commandHistoryAvailable: false,
+    commandHistory: null,
+    clipboardAvailable: false,
+    clipboard: null,
+    currentState: {},
+    commandClasses: {}
+  };
+
   // 检查命令历史
   if (workflowApp.commandHistory) {
     const historyStatus = workflowApp.commandHistory.getStatus();
-    console.log('✅ 命令历史管理器:', {
-      可撤销: historyStatus.canUndo,
-      可重做: historyStatus.canRedo,
-      撤销栈大小: historyStatus.undoCount,
-      重做栈大小: historyStatus.redoCount,
-      正在执行: historyStatus.isExecuting
-    });
+    status.commandHistoryAvailable = true;
+    status.commandHistory = {
+      canUndo: historyStatus.canUndo,
+      canRedo: historyStatus.canRedo,
+      undoCount: historyStatus.undoCount,
+      redoCount: historyStatus.redoCount,
+      isExecuting: historyStatus.isExecuting
+    };
+    console.log('✅ 命令历史管理器:', status.commandHistory);
   } else {
     console.log('❌ 命令历史管理器未初始化');
   }
@@ -657,28 +690,242 @@ function checkUndoRedoCopyPasteStatus() {
   // 检查剪贴板
   if (workflowApp.clipboardManager) {
     const clipboardStatus = workflowApp.clipboardManager.getStatus();
-    console.log('✅ 剪贴板管理器:', {
-      是否为空: clipboardStatus.isEmpty,
-      节点数量: clipboardStatus.nodeCount,
-      粘贴次数: clipboardStatus.pasteCount
-    });
+    status.clipboardAvailable = true;
+    status.clipboard = {
+      isEmpty: clipboardStatus.isEmpty,
+      nodeCount: clipboardStatus.nodeCount,
+      pasteCount: clipboardStatus.pasteCount
+    };
+    console.log('✅ 剪贴板管理器:', status.clipboard);
   } else {
     console.log('❌ 剪贴板管理器未初始化');
   }
 
   // 检查选中状态
-  console.log('📋 当前状态:', {
-    选中元素: workflowApp.state.selectedElement ? workflowApp.state.selectedElement.id : '无',
-    悬停元素: workflowApp.state.hoveredElement ? workflowApp.state.hoveredElement.id : '无'
-  });
+  status.currentState = {
+    selectedElement: workflowApp.state.selectedElement ? workflowApp.state.selectedElement.id : '无',
+    hoveredElement: workflowApp.state.hoveredElement ? workflowApp.state.hoveredElement.id : '无',
+    multiSelectionEnabled: workflowApp.state.multiSelection.enabled,
+    multiSelectionCount: workflowApp.state.multiSelection.selectedElements.length
+  };
+  console.log('📋 当前状态:', status.currentState);
 
   // 检查命令类是否可用
-  console.log('🔧 命令类可用性:', {
+  status.commandClasses = {
     CreateNodeCommand: typeof CreateNodeCommand !== 'undefined',
     DeleteNodeCommand: typeof DeleteNodeCommand !== 'undefined',
+    MultiNodeDeleteCommand: typeof MultiNodeDeleteCommand !== 'undefined',
     BatchCommand: typeof BatchCommand !== 'undefined',
     BaseCommand: typeof BaseCommand !== 'undefined'
+  };
+  console.log('🔧 命令类可用性:', status.commandClasses);
+
+  return status;
+}
+
+/**
+ * 设置内置测试功能
+ */
+function setupBuiltInTesting() {
+  console.log('🧪 设置内置测试功能...');
+
+  // 添加测试快捷键
+  console.log('📋 可用的测试命令:');
+  console.log('- WorkflowAPI.testBatchDeleteUndo() - 测试批量删除撤销功能');
+  console.log('- WorkflowAPI.createTestNodes() - 创建测试节点');
+  console.log('- WorkflowAPI.clearCanvas() - 清空画布');
+  console.log('- WorkflowAPI.checkUndoRedoCopyPasteStatus() - 检查状态');
+  console.log('');
+  console.log('🎯 快速测试步骤:');
+  console.log('1. 运行 WorkflowAPI.testBatchDeleteUndo() 进行自动化测试');
+  console.log('2. 或手动测试：拖拽多个节点 → 框选或Ctrl+点击选择 → 按Delete键 → 按Ctrl+Z撤销');
+
+  console.log('✅ 内置测试功能已准备就绪');
+}
+
+/**
+ * 测试批量删除撤销功能
+ */
+function testBatchDeleteUndo() {
+  return new Promise((resolve, reject) => {
+    try {
+      console.log('🧪 [BatchDeleteTest] 开始测试批量删除撤销功能');
+
+      // 检查应用状态
+      if (!workflowApp || !workflowApp.graph) {
+        throw new Error('应用未初始化');
+      }
+
+      // 清空画布
+      workflowApp.graph.clear();
+      workflowApp.clearSelection();
+      workflowApp.clearMultiSelection();
+
+      // 创建测试节点
+      const testNodes = createTestNodes();
+      if (testNodes.length === 0) {
+        throw new Error('创建测试节点失败');
+      }
+
+      console.log(`🧪 [BatchDeleteTest] 创建了 ${testNodes.length} 个测试节点`);
+
+      // 等待一小段时间确保节点创建完成
+      setTimeout(() => {
+        try {
+          // 选择所有测试节点
+          selectTestNodes(testNodes);
+          console.log(`🧪 [BatchDeleteTest] 已选择 ${testNodes.length} 个节点`);
+
+          // 等待选择完成后删除
+          setTimeout(() => {
+            try {
+              // 删除选中的节点
+              deleteSelectedElements();
+              console.log('🧪 [BatchDeleteTest] 已删除选中的节点');
+
+              // 等待删除完成后测试撤销
+              setTimeout(() => {
+                try {
+                  // 测试撤销
+                  undoOperation();
+                  console.log('🧪 [BatchDeleteTest] 已执行撤销操作');
+
+                  // 检查撤销结果
+                  setTimeout(() => {
+                    const result = verifyUndoResult(testNodes);
+                    console.log(`🧪 [BatchDeleteTest] ${result.message}`);
+
+                    if (result.success) {
+                      console.log('✅ 批量删除撤销测试通过！');
+                      resolve(result);
+                    } else {
+                      console.error('❌ 批量删除撤销测试失败！');
+                      reject(new Error(result.message));
+                    }
+                  }, 500);
+
+                } catch (error) {
+                  reject(new Error(`撤销操作失败: ${error.message}`));
+                }
+              }, 500);
+
+            } catch (error) {
+              reject(new Error(`删除操作失败: ${error.message}`));
+            }
+          }, 500);
+
+        } catch (error) {
+          reject(new Error(`选择节点失败: ${error.message}`));
+        }
+      }, 500);
+
+    } catch (error) {
+      console.error('🧪 [BatchDeleteTest] 测试失败:', error);
+      reject(error);
+    }
   });
+}
+
+/**
+ * 创建测试节点
+ */
+function createTestNodes() {
+  const testNodes = [];
+  const nodeManager = new NodeManager(workflowApp);
+
+  try {
+    // 创建3个不同类型的测试节点
+    const node1 = nodeManager.createProcessNode(200, 200);
+    const node2 = nodeManager.createProcessNode(350, 200);
+    const node3 = nodeManager.createProcessNode(500, 200);
+
+    if (node1) testNodes.push(node1);
+    if (node2) testNodes.push(node2);
+    if (node3) testNodes.push(node3);
+
+    console.log(`[AutoTest] 创建了 ${testNodes.length} 个测试节点`);
+  } catch (error) {
+    console.error('[AutoTest] 创建测试节点失败:', error);
+  }
+
+  return testNodes;
+}
+
+/**
+ * 选择测试节点
+ */
+function selectTestNodes(testNodes) {
+  try {
+    // 清除现有选择
+    workflowApp.clearSelection();
+    workflowApp.clearMultiSelection();
+
+    // 启用多选模式
+    workflowApp.state.multiSelection.enabled = true;
+
+    // 选择所有测试节点
+    testNodes.forEach(node => {
+      workflowApp.addToMultiSelection(node);
+    });
+
+    console.log(`[AutoTest] 已选择 ${testNodes.length} 个测试节点`);
+  } catch (error) {
+    console.error('[AutoTest] 选择测试节点失败:', error);
+    throw error;
+  }
+}
+
+/**
+ * 验证撤销结果
+ */
+function verifyUndoResult(originalNodes) {
+  try {
+    let restoredCount = 0;
+
+    originalNodes.forEach(originalNode => {
+      const restoredNode = workflowApp.graph.getCell(originalNode.id);
+      if (restoredNode) {
+        restoredCount++;
+      }
+    });
+
+    const success = restoredCount === originalNodes.length;
+    const message = success
+      ? `✅ 撤销测试成功！已恢复 ${restoredCount}/${originalNodes.length} 个节点`
+      : `❌ 撤销测试失败！仅恢复 ${restoredCount}/${originalNodes.length} 个节点`;
+
+    console.log(`[AutoTest] ${message}`);
+
+    return { success, message };
+  } catch (error) {
+    console.error('[AutoTest] 验证撤销结果失败:', error);
+    return {
+      success: false,
+      message: `验证撤销结果失败: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 清空画布
+ */
+function clearCanvas() {
+  try {
+    workflowApp.graph.clear();
+    workflowApp.clearSelection();
+    workflowApp.clearMultiSelection();
+
+    // 清空命令历史
+    if (workflowApp.commandHistory) {
+      workflowApp.commandHistory.clear();
+    }
+
+    console.log('✅ 画布已清空');
+    return true;
+  } catch (error) {
+    console.error('❌ 清空画布失败:', error);
+    return false;
+  }
 }
 
 // 暴露全局API
@@ -697,7 +944,11 @@ window.WorkflowAPI = {
   copySelectedNodes,
   pasteNodes,
   checkUndoRedoCopyPasteStatus,
-  // 新增工具栏状态检查
+  // 内置测试功能
+  testBatchDeleteUndo,
+  createTestNodes,
+  clearCanvas,
+  // 工具栏状态检查
   getUndoRedoToolbarStatus: () => {
     return workflowApp && workflowApp.components.undoRedoToolbar
       ? workflowApp.components.undoRedoToolbar.getStatus()
