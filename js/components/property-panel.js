@@ -10,6 +10,16 @@ class PropertyPanel {
     this.currentElement = null;
     this.isVisible = false;
     this.eventManager = new EventManager();
+
+    // 拖拽状态
+    this.isDragging = false;
+    this.dragStartX = 0;
+    this.dragStartY = 0;
+    this.panelStartX = 0;
+    this.panelStartY = 0;
+
+    // 验证定时器
+    this.validationTimer = null;
   }
 
   /**
@@ -50,11 +60,12 @@ class PropertyPanel {
       box-shadow: 0 4px 20px rgba(0,0,0,0.2);
       padding: 20px;
       z-index: 20000;
-      min-width: 300px;
-      max-width: 500px;
+      min-width: 450px;
+      max-width: 700px;
       max-height: 90vh;
       overflow-y: auto;
       display: none;
+      cursor: move;
     `;
 
     // Add CSS styles for tabbed interface
@@ -216,61 +227,89 @@ class PropertyPanel {
         display: block;
       }
 
-      /* Group Setting 特殊样式 */
+      /* Group Setting 特殊样式 - 垂直选项卡布局 */
       .group-setting-categories {
         display: flex;
         height: 400px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        overflow: hidden;
       }
 
-      .category-section {
+      /* 左侧垂直选项卡容器 */
+      .category-tabs-container {
         display: flex;
         flex-direction: column;
-        flex: 1;
+        width: 150px;
+        background-color: #f8f9fa;
         border-right: 1px solid #ddd;
       }
 
-      .category-section:last-child {
-        border-right: none;
-      }
-
       .category-header {
-        padding: 10px;
+        padding: 12px 10px;
         color: white;
         font-weight: bold;
         text-align: center;
         cursor: pointer;
-        transition: opacity 0.2s ease;
+        transition: all 0.3s ease;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        position: relative;
       }
 
-      .category-header:hover {
-        opacity: 0.8;
+      .category-header:last-child {
+        border-bottom: none;
       }
 
-      .master-data-header {
-        background-color: #e91e63;
-      }
-
-      .loading-seq-header {
-        background-color: #e91e63;
-      }
-
-      .left-over-header {
-        background-color: #e91e63;
-      }
-
+      /* 蓝色主题 - 未选中状态 */
+      .master-data-header,
+      .loading-seq-header,
+      .left-over-header,
       .categorial-header {
-        background-color: #e91e63;
+        background-color: #90caf9; /* 浅蓝色 */
+        color: #1565c0; /* 深蓝色文字 */
+      }
+
+      /* 悬停效果 */
+      .category-header:hover {
+        background-color: #64b5f6; /* 中等蓝色 */
+        color: white;
+        transform: translateX(2px);
+        box-shadow: 2px 0 4px rgba(0, 0, 0, 0.1);
+      }
+
+      /* 选中状态 */
+      .category-header.active {
+        background-color: #1976d2; /* 高饱和度蓝色 */
+        color: white;
+        transform: translateX(4px);
+        box-shadow: 4px 0 8px rgba(0, 0, 0, 0.15);
+      }
+
+      /* 右侧内容区域 */
+      .category-content-container {
+        flex: 1;
+        position: relative;
+        background-color: white;
       }
 
       .category-content {
-        flex: 1;
-        padding: 15px;
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 20px;
         overflow-y: auto;
         display: none;
       }
 
       .category-content.active {
         display: block;
+      }
+
+      /* 旧的样式保持兼容性 */
+      .category-section {
+        display: none; /* 隐藏旧的水平布局 */
       }
 
       .input-with-icon {
@@ -336,6 +375,30 @@ class PropertyPanel {
       .add-field-btn:hover {
         background-color: #f0f0f0;
       }
+
+      /* 拖拽相关样式 */
+      .property-panel input,
+      .property-panel textarea,
+      .property-panel select,
+      .property-panel button,
+      .property-panel .panel-close-icon,
+      .property-panel .tab,
+      .property-panel .category-header {
+        cursor: default !important;
+      }
+
+      .property-panel input:hover,
+      .property-panel textarea:hover,
+      .property-panel select:hover {
+        cursor: text !important;
+      }
+
+      .property-panel button:hover,
+      .property-panel .panel-close-icon:hover,
+      .property-panel .tab:hover,
+      .property-panel .category-header:hover {
+        cursor: pointer !important;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -355,6 +418,149 @@ class PropertyPanel {
         this.hide();
       }
     });
+
+    // 拖拽功能
+    this.setupDragFunctionality();
+  }
+
+  /**
+   * 设置拖拽功能
+   */
+  setupDragFunctionality() {
+    // 鼠标按下事件
+    this.eventManager.addEventListener(this.panel, 'mousedown', (e) => {
+      // 检查是否点击在可拖拽区域（非交互元素）
+      if (this.isDraggableArea(e.target)) {
+        this.startDrag(e);
+      }
+    });
+
+    // 使用节流处理鼠标移动事件以获得平滑的拖拽体验
+    const throttledDragMove = throttle((e) => {
+      if (this.isDragging) {
+        requestAnimationFrame(() => {
+          this.handleDrag(e);
+        });
+      }
+    }, CONFIG.ui.dragThrottleDelay || 5);
+
+    this.eventManager.addEventListener(document, 'mousemove', throttledDragMove);
+
+    // 鼠标抬起事件
+    this.eventManager.addEventListener(document, 'mouseup', () => {
+      if (this.isDragging) {
+        this.endDrag();
+      }
+    });
+  }
+
+  /**
+   * 检查是否为可拖拽区域
+   */
+  isDraggableArea(target) {
+    // 排除交互元素
+    const interactiveElements = [
+      'input', 'textarea', 'select', 'button', 'a'
+    ];
+
+    const tagName = target.tagName.toLowerCase();
+
+    // 如果是交互元素，不允许拖拽
+    if (interactiveElements.includes(tagName)) {
+      return false;
+    }
+
+    // 如果是关闭按钮或其他特殊类，不允许拖拽
+    if (target.classList.contains('panel-close-icon') ||
+        target.classList.contains('save-btn') ||
+        target.classList.contains('cancel-btn') ||
+        target.classList.contains('add-case-btn') ||
+        target.classList.contains('remove-case-btn') ||
+        target.classList.contains('tab') ||
+        target.classList.contains('category-header')) {
+      return false;
+    }
+
+    // 检查父元素是否为交互元素
+    let parent = target.parentElement;
+    while (parent && parent !== this.panel) {
+      if (interactiveElements.includes(parent.tagName.toLowerCase()) ||
+          parent.classList.contains('panel-close-icon') ||
+          parent.classList.contains('save-btn') ||
+          parent.classList.contains('cancel-btn') ||
+          parent.classList.contains('add-case-btn') ||
+          parent.classList.contains('remove-case-btn') ||
+          parent.classList.contains('tab') ||
+          parent.classList.contains('category-header')) {
+        return false;
+      }
+      parent = parent.parentElement;
+    }
+
+    return true;
+  }
+
+  /**
+   * 开始拖拽
+   */
+  startDrag(e) {
+    e.preventDefault();
+    this.isDragging = true;
+
+    // 记录拖拽开始位置
+    this.dragStartX = e.clientX;
+    this.dragStartY = e.clientY;
+
+    // 获取面板当前位置
+    const rect = this.panel.getBoundingClientRect();
+    this.panelStartX = rect.left;
+    this.panelStartY = rect.top;
+
+    // 改变光标样式
+    document.body.style.cursor = 'grabbing';
+    this.panel.style.cursor = 'grabbing';
+
+    console.log('开始拖拽属性面板');
+  }
+
+  /**
+   * 处理拖拽移动
+   */
+  handleDrag(e) {
+    if (!this.isDragging) return;
+
+    // 计算移动距离
+    const deltaX = e.clientX - this.dragStartX;
+    const deltaY = e.clientY - this.dragStartY;
+
+    // 计算新位置
+    const newX = this.panelStartX + deltaX;
+    const newY = this.panelStartY + deltaY;
+
+    // 确保面板不会移出视窗
+    const maxX = window.innerWidth - this.panel.offsetWidth;
+    const maxY = window.innerHeight - this.panel.offsetHeight;
+
+    const constrainedX = Math.max(0, Math.min(newX, maxX));
+    const constrainedY = Math.max(0, Math.min(newY, maxY));
+
+    // 更新面板位置
+    this.panel.style.left = constrainedX + 'px';
+    this.panel.style.top = constrainedY + 'px';
+    this.panel.style.transform = 'none'; // 移除居中变换
+  }
+
+  /**
+   * 结束拖拽
+   */
+  endDrag() {
+    this.isDragging = false;
+
+    // 恢复光标样式
+    document.body.style.cursor = '';
+    this.panel.style.cursor = 'move';
+
+    console.log('结束拖拽属性面板');
   }
 
   /**
@@ -369,10 +575,78 @@ class PropertyPanel {
     // 生成面板内容
     this.generatePanelContent(element);
 
-    // 显示面板
+    // 重置面板位置到居中并显示
+    this.resetPanelPosition();
     this.panel.style.display = 'block';
 
+    // 设置定期验证，确保元素仍然有效
+    this.startValidationTimer();
+
     console.log('属性面板已显示，编辑元素:', element.id);
+  }
+
+  /**
+   * 重置面板位置到屏幕中央
+   */
+  resetPanelPosition() {
+    // 重置所有定位相关的样式
+    this.panel.style.left = '';
+    this.panel.style.top = '';
+    this.panel.style.transform = 'translate(-50%, -50%)';
+
+    // 确保面板使用固定定位并居中
+    this.panel.style.position = 'fixed';
+    this.panel.style.left = '50%';
+    this.panel.style.top = '50%';
+
+    // 确保面板在视窗内可见
+    // 使用 requestAnimationFrame 确保 DOM 更新后再检查位置
+    requestAnimationFrame(() => {
+      this.ensurePanelInViewport();
+    });
+
+    console.log('属性面板位置已重置到屏幕中央');
+  }
+
+  /**
+   * 确保面板在视窗内可见
+   */
+  ensurePanelInViewport() {
+    if (!this.panel || this.panel.style.display === 'none') return;
+
+    const rect = this.panel.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    // 检查面板是否超出视窗边界
+    let needsAdjustment = false;
+    let newLeft = '50%';
+    let newTop = '50%';
+    let newTransform = 'translate(-50%, -50%)';
+
+    // 如果面板超出视窗，调整到安全位置
+    if (rect.left < 0 || rect.right > viewportWidth || rect.top < 0 || rect.bottom > viewportHeight) {
+      needsAdjustment = true;
+
+      // 计算安全的居中位置
+      const panelWidth = this.panel.offsetWidth;
+      const panelHeight = this.panel.offsetHeight;
+
+      // 确保面板完全在视窗内
+      const safeLeft = Math.max(20, Math.min(viewportWidth - panelWidth - 20, (viewportWidth - panelWidth) / 2));
+      const safeTop = Math.max(20, Math.min(viewportHeight - panelHeight - 20, (viewportHeight - panelHeight) / 2));
+
+      newLeft = safeLeft + 'px';
+      newTop = safeTop + 'px';
+      newTransform = 'none';
+    }
+
+    if (needsAdjustment) {
+      this.panel.style.left = newLeft;
+      this.panel.style.top = newTop;
+      this.panel.style.transform = newTransform;
+      console.log('属性面板位置已调整到视窗内安全位置');
+    }
   }
 
   /**
@@ -381,7 +655,14 @@ class PropertyPanel {
   hide() {
     this.isVisible = false;
     this.currentElement = null;
+    this.isDragging = false;
+
+    // 停止验证定时器
+    this.stopValidationTimer();
+
+    // 隐藏面板并重置位置
     this.panel.style.display = 'none';
+    this.resetPanelPosition();
 
     console.log('属性面板已隐藏');
   }
@@ -432,14 +713,28 @@ class PropertyPanel {
         </div>
       `;
 
-      // 属性选项卡内容 - 4个分类
+      // 属性选项卡内容 - 4个分类（垂直布局）
       propertiesContent = `
         <div class="group-setting-categories">
-          <!-- Master Data Category -->
-          <div class="category-section">
-            <div class="category-header master-data-header" data-category="master-data">
+          <!-- 左侧垂直选项卡 -->
+          <div class="category-tabs-container">
+            <div class="category-header master-data-header active" data-category="master-data">
               <span>Master Data</span>
             </div>
+            <div class="category-header loading-seq-header" data-category="loading-seq">
+              <span>Loading Seq</span>
+            </div>
+            <div class="category-header left-over-header" data-category="left-over">
+              <span>Left Over</span>
+            </div>
+            <div class="category-header categorial-header" data-category="categorial">
+              <span>Categorial</span>
+            </div>
+          </div>
+
+          <!-- 右侧内容区域 -->
+          <div class="category-content-container">
+            <!-- Master Data Content -->
             <div class="category-content master-data-content active">
               <div class="form-group">
                 <label for="source-field-name">Source Field Name</label>
@@ -456,26 +751,16 @@ class PropertyPanel {
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- Loading Seq Category -->
-          <div class="category-section">
-            <div class="category-header loading-seq-header" data-category="loading-seq">
-              <span>Loading Seq</span>
-            </div>
+            <!-- Loading Seq Content -->
             <div class="category-content loading-seq-content">
               <div id="loading-seq-fields">
                 ${this.generateLoadingSeqFields(properties.loadingSeqFields || [])}
               </div>
               <button type="button" id="add-loading-seq-field" class="add-field-btn">+</button>
             </div>
-          </div>
 
-          <!-- Left Over Category -->
-          <div class="category-section">
-            <div class="category-header left-over-header" data-category="left-over">
-              <span>Left Over</span>
-            </div>
+            <!-- Left Over Content -->
             <div class="category-content left-over-content">
               <div class="form-group">
                 <label for="left-over-way-out">Left Over way out</label>
@@ -498,13 +783,8 @@ class PropertyPanel {
                 </label>
               </div>
             </div>
-          </div>
 
-          <!-- Categorial Category -->
-          <div class="category-section">
-            <div class="category-header categorial-header" data-category="categorial">
-              <span>Categorial</span>
-            </div>
+            <!-- Categorial Content -->
             <div class="category-content categorial-content">
               <div class="form-group">
                 <label>
@@ -799,10 +1079,15 @@ class PropertyPanel {
 
     categoryHeaders.forEach(header => {
       this.eventManager.addEventListener(header, 'click', () => {
-        // 移除所有分类的活动状态
+        // 移除所有分类头部的活动状态
+        categoryHeaders.forEach(h => h.classList.remove('active'));
+        // 移除所有分类内容的活动状态
         categoryContents.forEach(content => content.classList.remove('active'));
 
-        // 添加当前分类的活动状态
+        // 添加当前分类头部的活动状态
+        header.classList.add('active');
+
+        // 添加当前分类内容的活动状态
         const category = header.getAttribute('data-category');
         const targetContent = this.panel.querySelector(`.${category}-content`);
         if (targetContent) {
@@ -1064,10 +1349,66 @@ class PropertyPanel {
   }
 
   /**
+   * 检查当前元素是否仍然存在于图中
+   */
+  isCurrentElementValid() {
+    if (!this.currentElement || !this.isVisible) {
+      return false;
+    }
+
+    try {
+      // 检查元素是否仍在图中
+      const elementInGraph = this.app.graph.getCell(this.currentElement.id);
+      return elementInGraph !== undefined;
+    } catch (error) {
+      console.warn('[PropertyPanel] 检查当前元素有效性时出错:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 如果当前元素无效则自动关闭面板
+   */
+  validateAndCloseIfInvalid() {
+    if (this.isVisible && !this.isCurrentElementValid()) {
+      console.log('[PropertyPanel] 当前元素已无效，自动关闭属性面板');
+      this.hide();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * 开始验证定时器
+   */
+  startValidationTimer() {
+    // 清除现有定时器
+    this.stopValidationTimer();
+
+    // 设置新的定时器，每2秒检查一次
+    this.validationTimer = setInterval(() => {
+      this.validateAndCloseIfInvalid();
+    }, 2000);
+  }
+
+  /**
+   * 停止验证定时器
+   */
+  stopValidationTimer() {
+    if (this.validationTimer) {
+      clearInterval(this.validationTimer);
+      this.validationTimer = null;
+    }
+  }
+
+  /**
    * 销毁属性面板
    */
   destroy() {
     try {
+      // 停止验证定时器
+      this.stopValidationTimer();
+
       // 清理事件监听器
       this.eventManager.removeAllListeners();
 

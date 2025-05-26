@@ -611,8 +611,11 @@ class NodeManager {
     try {
       console.log('[deleteNode] 开始删除节点:', node.id, node.get('type'));
 
-      // 清除应用状态
+      // 清除应用状态和UI元素
       this.clearNodeFromAppState(node);
+
+      // 关闭相关的属性面板
+      this.closePropertyPanelForNode(node);
 
       // 根据节点类型使用不同的删除策略
       if (node.isContainer) {
@@ -632,6 +635,44 @@ class NodeManager {
       console.error('[deleteNode] 删除节点时出错:', error);
       ErrorHandler.handle(error, '节点删除');
       throw error; // 重新抛出错误，让调用者知道删除失败
+    }
+  }
+
+  /**
+   * 关闭指定节点的属性面板
+   */
+  closePropertyPanelForNode(node) {
+    try {
+      console.log(`[closePropertyPanelForNode] 检查节点 ${node.id} 的属性面板`);
+
+      const propertyPanel = this.app.components.propertyPanel;
+      if (!propertyPanel) {
+        console.log('[closePropertyPanelForNode] 属性面板组件不存在');
+        return;
+      }
+
+      // 检查属性面板是否正在显示此节点的属性
+      if (propertyPanel.isVisible && propertyPanel.currentElement === node) {
+        console.log(`[closePropertyPanelForNode] 关闭节点 ${node.id} 的属性面板`);
+        propertyPanel.hide();
+      } else if (propertyPanel.isVisible && propertyPanel.currentElement) {
+        // 额外安全检查：比较节点ID（防止对象引用不一致的情况）
+        if (propertyPanel.currentElement.id === node.id) {
+          console.log(`[closePropertyPanelForNode] 通过ID匹配关闭节点 ${node.id} 的属性面板`);
+          propertyPanel.hide();
+        }
+      }
+
+    } catch (error) {
+      console.error('[closePropertyPanelForNode] 关闭属性面板时出错:', error);
+      // 即使出错也要尝试强制关闭属性面板
+      try {
+        if (this.app.components.propertyPanel && this.app.components.propertyPanel.isVisible) {
+          this.app.components.propertyPanel.hide();
+        }
+      } catch (e) {
+        console.error('[closePropertyPanelForNode] 强制关闭属性面板也失败:', e);
+      }
     }
   }
 
@@ -702,6 +743,9 @@ class NodeManager {
 
     // 清理容器相关的UI元素
     this.cleanupContainerUIElements(node);
+
+    // 关闭容器节点的属性面板（如果打开的话）
+    this.closePropertyPanelForNode(node);
 
     // 删除容器节点本身
     console.log(`[deleteContainerNode] 删除容器节点: ${node.id}`);
@@ -811,6 +855,9 @@ class NodeManager {
     const nodeType = node.get('type');
     const nodeLabel = node.attr('label/text');
     console.log(`特殊节点 ${node.id} (${nodeLabel}) 将被删除`);
+
+    // 关闭特殊节点的属性面板（如果打开的话）
+    this.closePropertyPanelForNode(node);
 
     this.forceRemoveNode(node);
   }

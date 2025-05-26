@@ -1429,10 +1429,10 @@ class WorkflowApp {
 
       if (this.state.currentEditingNode === cell) {
         this.state.currentEditingNode = null;
-        if (this.components.propertyPanel) {
-          this.components.propertyPanel.hide();
-        }
       }
+
+      // 关闭属性面板（增强版本，包含多重检查）
+      this.closePropertyPanelForDeletedNode(cell);
 
       // 如果删除的是容器节点，进行特殊清理
       if (cell.isContainer) {
@@ -1461,6 +1461,73 @@ class WorkflowApp {
 
     } catch (error) {
       ErrorHandler.handle(error, '节点删除处理');
+    }
+  }
+
+  /**
+   * 关闭已删除节点的属性面板
+   * @param {joint.shapes.standard.Element} cell
+   */
+  closePropertyPanelForDeletedNode(cell) {
+    try {
+      console.log(`[closePropertyPanelForDeletedNode] 检查已删除节点 ${cell.id} 的属性面板`);
+
+      const propertyPanel = this.components.propertyPanel;
+      if (!propertyPanel) {
+        console.log('[closePropertyPanelForDeletedNode] 属性面板组件不存在');
+        return;
+      }
+
+      // 检查属性面板是否可见
+      if (!propertyPanel.isVisible) {
+        console.log('[closePropertyPanelForDeletedNode] 属性面板未显示，无需关闭');
+        return;
+      }
+
+      // 多重检查确保关闭正确的属性面板
+      let shouldClose = false;
+
+      // 检查1：直接对象引用比较
+      if (propertyPanel.currentElement === cell) {
+        console.log(`[closePropertyPanelForDeletedNode] 通过对象引用匹配到节点 ${cell.id}`);
+        shouldClose = true;
+      }
+
+      // 检查2：ID比较（防止对象引用不一致）
+      if (!shouldClose && propertyPanel.currentElement && propertyPanel.currentElement.id === cell.id) {
+        console.log(`[closePropertyPanelForDeletedNode] 通过ID匹配到节点 ${cell.id}`);
+        shouldClose = true;
+      }
+
+      // 检查3：应用状态比较
+      if (!shouldClose && this.state.currentEditingNode === cell) {
+        console.log(`[closePropertyPanelForDeletedNode] 通过应用状态匹配到节点 ${cell.id}`);
+        shouldClose = true;
+      }
+
+      if (shouldClose) {
+        console.log(`[closePropertyPanelForDeletedNode] 关闭节点 ${cell.id} 的属性面板`);
+        propertyPanel.hide();
+
+        // 确保应用状态也被清理
+        if (this.state.currentEditingNode === cell) {
+          this.state.currentEditingNode = null;
+        }
+      } else {
+        console.log(`[closePropertyPanelForDeletedNode] 节点 ${cell.id} 的属性面板未打开或已关闭`);
+      }
+
+    } catch (error) {
+      console.error('[closePropertyPanelForDeletedNode] 关闭属性面板时出错:', error);
+      // 即使出错也要尝试强制关闭属性面板
+      try {
+        if (this.components.propertyPanel && this.components.propertyPanel.isVisible) {
+          console.log('[closePropertyPanelForDeletedNode] 强制关闭属性面板');
+          this.components.propertyPanel.hide();
+        }
+      } catch (e) {
+        console.error('[closePropertyPanelForDeletedNode] 强制关闭属性面板也失败:', e);
+      }
     }
   }
 

@@ -10,7 +10,7 @@ global.joint = {
         this.elements = [];
         this.links = [];
       }
-      
+
       addCell(cell) {
         if (cell.isLink?.()) {
           this.links.push(cell);
@@ -19,79 +19,79 @@ global.joint = {
         }
         return cell;
       }
-      
+
       getElements() {
         return this.elements;
       }
-      
+
       getLinks() {
         return this.links;
       }
-      
+
       clear() {
         this.elements = [];
         this.links = [];
       }
-      
+
       toJSON() {
         return {
           cells: [...this.elements, ...this.links]
         };
       }
-      
+
       fromJSON(data) {
         this.elements = data.cells?.filter(cell => !cell.type?.includes('Link')) || [];
         this.links = data.cells?.filter(cell => cell.type?.includes('Link')) || [];
       }
-      
+
       getConnectedLinks(element) {
-        return this.links.filter(link => 
-          link.get('source')?.id === element.id || 
+        return this.links.filter(link =>
+          link.get('source')?.id === element.id ||
           link.get('target')?.id === element.id
         );
       }
     },
-    
+
     Paper: class MockPaper {
       constructor(options) {
         this.options = options;
         this.scale = 1;
         this.translate = { tx: 0, ty: 0 };
       }
-      
+
       setDimensions(width, height) {
         this.options.width = width;
         this.options.height = height;
       }
-      
+
       scale(scaleX, scaleY) {
         this.scale = scaleX;
       }
-      
+
       translate(tx, ty) {
         this.translate = { tx, ty };
       }
-      
+
       clientToLocalPoint(x, y) {
         return { x: x / this.scale, y: y / this.scale };
       }
-      
+
       localToClientPoint(x, y) {
         return { x: x * this.scale, y: y * this.scale };
       }
     },
-    
+
     Element: class MockElement {
       constructor(attributes) {
         this.attributes = attributes || {};
         this.id = attributes?.id || 'element_' + Math.random().toString(36).substr(2, 9);
         this.ports = [];
       }
-      
+
       get(key) {
         return this.attributes[key];
       }
-      
+
       set(key, value) {
         if (typeof key === 'object') {
           Object.assign(this.attributes, key);
@@ -100,7 +100,7 @@ global.joint = {
         }
         return this;
       }
-      
+
       attr(path, value) {
         if (arguments.length === 1) {
           return this.attributes[path];
@@ -108,7 +108,7 @@ global.joint = {
         this.attributes[path] = value;
         return this;
       }
-      
+
       position(x, y) {
         if (arguments.length === 0) {
           return this.attributes.position || { x: 0, y: 0 };
@@ -116,57 +116,57 @@ global.joint = {
         this.attributes.position = { x, y };
         return this;
       }
-      
+
       size() {
         return this.attributes.size || { width: 100, height: 60 };
       }
-      
+
       resize(width, height) {
         this.attributes.size = { width, height };
         return this;
       }
-      
+
       remove() {
         // Mock remove
         return this;
       }
-      
+
       isLink() {
         return false;
       }
-      
+
       clone() {
         return new MockElement({
           ...this.attributes,
           id: 'element_' + Math.random().toString(36).substr(2, 9)
         });
       }
-      
+
       addPort(port) {
         this.ports.push(port);
         return this;
       }
-      
+
       removePort(portId) {
         this.ports = this.ports.filter(p => p.id !== portId);
         return this;
       }
-      
+
       getPorts() {
         return this.ports;
       }
     },
-    
+
     Link: class MockLink {
       constructor(attributes) {
         this.attributes = attributes || {};
         this.id = attributes?.id || 'link_' + Math.random().toString(36).substr(2, 9);
       }
-      
+
       get(key) {
         return this.attributes[key];
       }
-      
+
       set(key, value) {
         if (typeof key === 'object') {
           Object.assign(this.attributes, key);
@@ -175,7 +175,7 @@ global.joint = {
         }
         return this;
       }
-      
+
       source(source) {
         if (arguments.length === 0) {
           return this.attributes.source;
@@ -183,7 +183,7 @@ global.joint = {
         this.attributes.source = source;
         return this;
       }
-      
+
       target(target) {
         if (arguments.length === 0) {
           return this.attributes.target;
@@ -191,47 +191,48 @@ global.joint = {
         this.attributes.target = target;
         return this;
       }
-      
+
       remove() {
         return this;
       }
-      
+
       isLink() {
         return true;
       }
     }
   },
-  
+
   shapes: {
-    standard: {
-      Circle: class MockCircle extends global.joint.dia.Element {
-        constructor(attributes) {
-          super(attributes);
-          this.attributes.type = 'standard.Circle';
-        }
-      },
-      
-      Rectangle: class MockRectangle extends global.joint.dia.Element {
-        constructor(attributes) {
-          super(attributes);
-          this.attributes.type = 'standard.Rectangle';
-        }
-      },
-      
-      Polygon: class MockPolygon extends global.joint.dia.Element {
-        constructor(attributes) {
-          super(attributes);
-          this.attributes.type = 'standard.Polygon';
-        }
-      },
-      
-      Link: class MockStandardLink extends global.joint.dia.Link {
-        constructor(attributes) {
-          super(attributes);
-          this.attributes.type = 'standard.Link';
-        }
-      }
-    }
+    standard: {}
+  }
+};
+
+// 添加shapes到joint对象（在joint对象定义之后）
+global.joint.shapes.standard.Circle = class MockCircle extends global.joint.dia.Element {
+  constructor(attributes) {
+    super(attributes);
+    this.attributes.type = 'standard.Circle';
+  }
+};
+
+global.joint.shapes.standard.Rectangle = class MockRectangle extends global.joint.dia.Element {
+  constructor(attributes) {
+    super(attributes);
+    this.attributes.type = 'standard.Rectangle';
+  }
+};
+
+global.joint.shapes.standard.Polygon = class MockPolygon extends global.joint.dia.Element {
+  constructor(attributes) {
+    super(attributes);
+    this.attributes.type = 'standard.Polygon';
+  }
+};
+
+global.joint.shapes.standard.Link = class MockStandardLink extends global.joint.dia.Link {
+  constructor(attributes) {
+    super(attributes);
+    this.attributes.type = 'standard.Link';
   }
 };
 
@@ -254,7 +255,7 @@ global._ = {
       timeout = setTimeout(later, wait);
     };
   },
-  
+
   throttle: (func, limit) => {
     let inThrottle;
     return function() {
@@ -267,7 +268,7 @@ global._ = {
       }
     };
   },
-  
+
   clone: (obj) => JSON.parse(JSON.stringify(obj)),
   isObject: (obj) => typeof obj === 'object' && obj !== null,
   isArray: Array.isArray,
@@ -280,11 +281,11 @@ global.Backbone = {
     constructor(attributes) {
       this.attributes = attributes || {};
     }
-    
+
     get(key) {
       return this.attributes[key];
     }
-    
+
     set(key, value) {
       if (typeof key === 'object') {
         Object.assign(this.attributes, key);
@@ -311,6 +312,10 @@ global.console = {
   warn: jest.fn(),
   error: jest.fn()
 };
+
+// 加载应用模块
+require('../js/utils/helpers.js');
+require('../js/core/constants.js');
 
 // 测试前重置模拟对象
 beforeEach(() => {
