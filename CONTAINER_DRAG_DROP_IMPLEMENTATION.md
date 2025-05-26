@@ -22,9 +22,11 @@ This implementation adds enhanced drag-and-drop functionality to container nodes
 - **Independence**: The node becomes independent again after being moved out
 
 ### 4. Visual Feedback System
-- **Highlight Effects**: Clear visual indicators (light red border shadow) when hovering over valid drop targets
+- **Highlight Effects**: Clear visual indicators (subtle light blue border shadow) when hovering over valid drop targets
 - **Smooth Transitions**: CSS transitions for smooth border styling changes
 - **Enhanced Styling**: Additional CSS classes for improved visual feedback
+- **Reduced Intensity**: More subtle highlighting effect for better user experience
+- **Text Preservation**: Container title text styling remains unchanged during highlighting
 
 ## Technical Implementation
 
@@ -51,10 +53,17 @@ This implementation adds enhanced drag-and-drop functionality to container nodes
 ```css
 /* 容器拖拽高亮效果 */
 .container-drag-highlight {
-    stroke: #ff6b6b !important;
+    stroke: #87ceeb !important;
     stroke-width: 2 !important;
-    filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.5)) !important;
+    filter: drop-shadow(0 0 6px rgba(135, 206, 235, 0.3)) !important;
     transition: all 0.2s ease !important;
+}
+
+/* 确保容器标题文本不受高亮效果影响 */
+.container-drag-highlight text {
+    fill: inherit !important;
+    stroke: none !important;
+    filter: none !important;
 }
 
 /* 拖拽状态下的光标 */
@@ -128,7 +137,7 @@ validateEmbedding: (childView, parentView) => {
 ## Usage Instructions
 
 ### For Users
-1. **Drag into Container**: Drag any regular node over a container node to see the red highlight effect
+1. **Drag into Container**: Drag any regular node over a container node to see the subtle light blue highlight effect
 2. **Drop to Embed**: Release the mouse button while over the container to embed the node
 3. **Move Container**: Drag the container to move all embedded nodes together
 4. **Drag out**: Drag an embedded node outside the container boundaries to unembed it

@@ -420,8 +420,8 @@
         node.set('z', 10);
     } else if (dragType === 'process') {
         node = new joint.shapes.standard.Rectangle();
-        node.position(x - 60, y - 30);
-        node.resize(120, 60);
+        node.position(x - 60, y - 40);
+        node.resize(120, 80);
         node.attr({
             body: {
                 fill: '#2196f3',
@@ -464,16 +464,19 @@
         // Set z-index to ensure visibility
         node.set('z', 5);
     } else if (dragType === 'switch') {
-        node = new joint.shapes.standard.Rectangle();
+        node = new joint.shapes.standard.Polygon();
         node.position(x - 70, y - 40);
         node.resize(140, 80);
+
+        // 定义八边形的点坐标 (矩形四角切角)
+        const octagonPoints = '15,0 85,0 100,15 100,85 85,100 15,100 0,85 0,15';
+
         node.attr({
             body: {
                 fill: '#9c27b0', // 紫色背景
                 stroke: '#6a1b9a',
                 strokeWidth: 3,
-                rx: 10,
-                ry: 10,
+                refPoints: octagonPoints,
                 pointerEvents: 'auto'
             },
             label: {
@@ -1510,29 +1513,30 @@
       stroke: #999999;
     }
 
-    /* 容器节点调整大小时的样式 */
+    /* 容器节点调整大小时的样式 - 更新为12px以匹配主实现 */
     .resize-handle {
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background-color: #FFFFFF;
-      border: 1px solid #333333;
-      z-index: 10000;
+      position: fixed;
+      width: 12px;
+      height: 12px;
+      background-color: rgba(0, 0, 0, 0.7);
+      border: 2px solid white;
+      z-index: 10001;
       box-shadow: 0 0 3px rgba(0,0,0,0.3);
-      transition: transform 0.1s ease;
+      transition: transform 0.2s ease;
+      pointer-events: auto;
     }
 
     .resize-handle:hover {
       transform: scale(1.2) !important;
-      background-color: #EEEEEE;
+      background-color: rgba(0, 0, 0, 0.9);
     }
 
     .resize-handle.nw {
-      cursor: nwse-resize;
+      cursor: nw-resize;
     }
 
     .resize-handle.se {
-      cursor: nwse-resize;
+      cursor: se-resize;
     }
 
     .resize-handle.n {
@@ -1564,9 +1568,8 @@
     }
 
     .resize-handle.nw {
-      cursor: nwse-resize;
-      top: -4px;
-      left: -4px;
+      cursor: nw-resize;
+      /* Remove conflicting positioning - handled by JavaScript */
     }
 
     .resize-handle.ne {
@@ -1576,9 +1579,8 @@
     }
 
     .resize-handle.se {
-      cursor: nwse-resize;
-      bottom: -4px;
-      right: -4px;
+      cursor: se-resize;
+      /* Remove conflicting positioning - handled by JavaScript */
     }
 
     .resize-handle.sw {
@@ -1673,24 +1675,48 @@
       handle.className = `resize-handle ${direction}`;
       handle.setAttribute('data-direction', direction);
 
+      // 设置句柄基本样式 - 与主实现保持一致
+      handle.style.position = 'fixed';
+      handle.style.width = '12px';
+      handle.style.height = '12px';
+      handle.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+      handle.style.border = '2px solid white';
+      handle.style.zIndex = '10001';
+      handle.style.pointerEvents = 'auto';
+      handle.style.transition = 'transform 0.2s ease';
+
+      // Create triangular shape using CSS clip-path
+      if (direction === 'nw') {
+        // Top-left triangle pointing toward top-left (↖)
+        handle.style.clipPath = 'polygon(0% 0%, 100% 0%, 0% 100%)';
+        handle.style.cursor = 'nw-resize';
+      } else if (direction === 'se') {
+        // Bottom-right triangle pointing toward bottom-right (↘)
+        handle.style.clipPath = 'polygon(100% 0%, 100% 100%, 0% 100%)';
+        handle.style.cursor = 'se-resize';
+      }
+
       // 设置句柄位置
       const handleRect = calculateHandlePosition(direction, position, size, paperRect);
 
-      // 获取句柄大小
-      const handleSize = 8; // 句柄大小为8px
+      // 获取句柄大小 - 与主实现保持一致
+      const handleSize = 12; // 句柄大小为12px，与CONFIG.ui.resizeHandleSize一致
 
-      // 调整位置，使句柄中心点与容器角重叠
-      handle.style.left = `${handleRect.left - handleSize/2}px`;
-      handle.style.top = `${handleRect.top - handleSize/2}px`;
+      // 调整位置，使句柄中心点精确对齐容器角点
+      handle.style.left = `${handleRect.left}px`;
+      handle.style.top = `${handleRect.top}px`;
 
-      // 添加鼠标进入事件，防止句柄消失
+      // 添加悬停效果和鼠标状态跟踪 - 与主实现保持一致
       handle.addEventListener('mouseenter', function(evt) {
-        handle._isMouseOver = true;
+        this.style.transform = 'scale(1.2)';
+        this.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+        this._isMouseOver = true;
       });
 
-      // 添加鼠标离开事件
       handle.addEventListener('mouseleave', function(evt) {
-        handle._isMouseOver = false;
+        this.style.transform = 'scale(1)';
+        this.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        this._isMouseOver = false;
       });
 
       // 添加鼠标按下事件
@@ -1709,8 +1735,8 @@
         document.addEventListener('mouseup', stopResize);
       });
 
-      // 将句柄添加到DOM
-      paper.el.appendChild(handle);
+      // 将句柄添加到DOM - 使用document.body以匹配主实现
+      document.body.appendChild(handle);
       resizeHandles.push(handle);
     });
   }
@@ -1770,9 +1796,19 @@
 
     const screenPoint = svgPoint.matrixTransform(paper.svg.getScreenCTM());
 
+    // 获取句柄大小并调整位置，使中心点精确对齐容器角点
+    // 考虑边框：总视觉大小 = handleSize + 2px边框 * 2 = handleSize + 4px
+    const handleSize = 12;
+    const borderWidth = 2;
+    const totalVisualSize = handleSize + (borderWidth * 2);
+    const finalLeft = screenPoint.x - totalVisualSize / 2;
+    const finalTop = screenPoint.y - totalVisualSize / 2;
+
+    console.log(`[calculateHandlePosition] ${direction} handle - Corner: (${screenPoint.x}, ${screenPoint.y}), Handle: (${finalLeft}, ${finalTop})`);
+
     return {
-      left: screenPoint.x - paperRect.left,
-      top: screenPoint.y - paperRect.top
+      left: finalLeft,
+      top: finalTop
     };
   }
 

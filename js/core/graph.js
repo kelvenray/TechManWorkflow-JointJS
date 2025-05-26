@@ -709,9 +709,10 @@ class WorkflowApp {
    */
   highlightContainer(container) {
     try {
-      container.attr('body/stroke', '#ff6b6b');
+      // 使用浅蓝色高亮，降低强度
+      container.attr('body/stroke', '#87ceeb');
       container.attr('body/strokeWidth', 2);
-      container.attr('body/filter', 'drop-shadow(0 0 8px rgba(255, 107, 107, 0.5))');
+      container.attr('body/filter', 'drop-shadow(0 0 6px rgba(135, 206, 235, 0.3))');
 
       // 添加CSS类以增强视觉效果
       const containerView = this.paper.findViewByModel(container);
@@ -1682,13 +1683,21 @@ class WorkflowApp {
       handle.style.height = `${handleSize}px`;
       handle.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
       handle.style.border = '2px solid white';
-      handle.style.borderRadius = '50%';
       handle.style.cursor = direction === 'nw' ? 'nw-resize' : 'se-resize';
       handle.style.zIndex = '10001';
       handle.style.pointerEvents = 'auto';
       handle.style.transition = 'transform 0.2s ease';
 
-      // 计算句柄位置 - 修正计算逻辑
+      // Create triangular shape using CSS clip-path
+      if (direction === 'nw') {
+        // Top-left triangle pointing toward top-left (↖)
+        handle.style.clipPath = 'polygon(0% 0%, 100% 0%, 0% 100%)';
+      } else if (direction === 'se') {
+        // Bottom-right triangle pointing toward bottom-right (↘)
+        handle.style.clipPath = 'polygon(100% 0%, 100% 100%, 0% 100%)';
+      }
+
+      // 计算句柄位置 - 确保中心点精确对齐容器角点
       let handleX, handleY;
       if (direction === 'nw') {
         // 左上角：容器左上角位置
@@ -1706,11 +1715,17 @@ class WorkflowApp {
       svgPoint.y = handleY;
       const screenPoint = svgPoint.matrixTransform(this.paper.svg.getScreenCTM());
 
-      // 调整句柄位置，使其中心点对齐容器角点
-      handle.style.left = `${screenPoint.x - handleSize / 2}px`;
-      handle.style.top = `${screenPoint.y - handleSize / 2}px`;
+      // 调整句柄位置，使其中心点精确对齐容器角点
+      // 考虑边框：总视觉大小 = handleSize + 2px边框 * 2 = handleSize + 4px
+      const borderWidth = 2;
+      const totalVisualSize = handleSize + (borderWidth * 2);
+      const finalLeft = screenPoint.x - totalVisualSize / 2;
+      const finalTop = screenPoint.y - totalVisualSize / 2;
 
-      console.log(`[createResizeHandles] Handle ${direction} positioned at screen: ${screenPoint.x - handleSize / 2}, ${screenPoint.y - handleSize / 2}`);
+      handle.style.left = `${finalLeft}px`;
+      handle.style.top = `${finalTop}px`;
+
+      console.log(`[createResizeHandles] ${direction} handle positioned - Corner: (${screenPoint.x}, ${screenPoint.y}), Handle: (${finalLeft}, ${finalTop})`);
 
       // 添加悬停效果
       handle.onmouseenter = function() {
@@ -1849,11 +1864,13 @@ class WorkflowApp {
 
       let handleX, handleY;
       if (direction === 'nw') {
-        handleX = position.x - handleSize / 2;
-        handleY = position.y - handleSize / 2;
+        // 左上角：容器左上角位置
+        handleX = position.x;
+        handleY = position.y;
       } else {
-        handleX = position.x + size.width - handleSize / 2;
-        handleY = position.y + size.height - handleSize / 2;
+        // 右下角：容器右下角位置
+        handleX = position.x + size.width;
+        handleY = position.y + size.height;
       }
 
       // 将SVG坐标转换为页面坐标
@@ -1862,8 +1879,12 @@ class WorkflowApp {
       svgPoint.y = handleY;
       const screenPoint = svgPoint.matrixTransform(this.paper.svg.getScreenCTM());
 
-      handle.style.left = `${screenPoint.x}px`;
-      handle.style.top = `${screenPoint.y}px`;
+      // 调整句柄位置，使其中心点精确对齐容器角点
+      // 考虑边框：总视觉大小 = handleSize + 2px边框 * 2 = handleSize + 4px
+      const borderWidth = 2;
+      const totalVisualSize = handleSize + (borderWidth * 2);
+      handle.style.left = `${screenPoint.x - totalVisualSize / 2}px`;
+      handle.style.top = `${screenPoint.y - totalVisualSize / 2}px`;
     });
   }
 
@@ -1902,7 +1923,6 @@ class WorkflowApp {
         position: fixed;
         background-color: rgba(0, 0, 0, 0.7);
         border: 2px solid white;
-        border-radius: 50%;
         z-index: 10001;
         pointer-events: auto;
         transition: transform 0.2s ease;

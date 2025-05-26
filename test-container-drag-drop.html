@@ -27,10 +27,17 @@
 
         /* 容器拖拽高亮效果 */
         .container-drag-highlight {
-            stroke: #ff6b6b !important;
+            stroke: #87ceeb !important;
             stroke-width: 2 !important;
-            filter: drop-shadow(0 0 8px rgba(255, 107, 107, 0.5)) !important;
+            filter: drop-shadow(0 0 6px rgba(135, 206, 235, 0.3)) !important;
             transition: all 0.2s ease !important;
+        }
+
+        /* 确保容器标题文本不受高亮效果影响 */
+        .container-drag-highlight text {
+            fill: inherit !important;
+            stroke: none !important;
+            filter: none !important;
         }
 
         /* 拖拽状态下的光标 */
@@ -71,10 +78,10 @@
 <body>
     <!-- 测试说明 -->
     <div class="test-instructions">
-        <h3>容器拖拽测试 (已修复)</h3>
+        <h3>容器拖拽测试 (已优化)</h3>
         <ul>
             <li>✅ 拖拽普通节点到容器上方</li>
-            <li>✅ 观察容器边框变红色高亮</li>
+            <li>✅ 观察容器边框变浅蓝色高亮</li>
             <li>✅ 释放鼠标将节点嵌入容器</li>
             <li>🔧 拖拽容器时嵌套节点一起移动 (已修复)</li>
             <li>🔧 点击容器时嵌套节点保持可见 (已修复)</li>

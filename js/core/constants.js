@@ -27,7 +27,7 @@ const CONFIG = {
     sizes: {
       start: { width: 80, height: 80 },
       end: { width: 80, height: 80 },
-      process: { width: 120, height: 60 },
+      process: { width: 120, height: 80 },
       decision: { width: 120, height: 120 },
       switch: { width: 140, height: 80 },
       container: { width: 300, height: 240 }

@@ -141,9 +141,10 @@ class Sidebar {
         height: '20px',
         backgroundColor: nodeType.color,
         border: '2px solid ' + this.getDarkerColor(nodeType.color),
-        borderRadius: nodeType.type === NODE_TYPES.START || nodeType.type === NODE_TYPES.END ? '50%' : '4px',
+        borderRadius: this.getIconBorderRadius(nodeType.type),
         marginRight: '10px',
-        flexShrink: '0'
+        flexShrink: '0',
+        clipPath: this.getIconClipPath(nodeType.type)
       }
     });
 
@@ -182,6 +183,34 @@ class Sidebar {
     };
     // ts(0f297f45)
     return colorMap[/** @type {keyof typeof colorMap} */ (color)] || color;
+  }
+
+  /**
+   * 获取图标边框圆角
+   * @param {string} nodeType
+   * @returns {string}
+   */
+  getIconBorderRadius(nodeType) {
+    if (nodeType === NODE_TYPES.START || nodeType === NODE_TYPES.END) {
+      return '50%';
+    } else if (nodeType === NODE_TYPES.SWITCH) {
+      return '2px'; // 六边形使用较小的圆角
+    } else {
+      return '4px';
+    }
+  }
+
+  /**
+   * 获取图标裁剪路径（用于创建特殊形状）
+   * @param {string} nodeType
+   * @returns {string}
+   */
+  getIconClipPath(nodeType) {
+    if (nodeType === NODE_TYPES.SWITCH) {
+      // 创建八边形裁剪路径 (矩形四角切角)
+      return 'polygon(15% 0%, 85% 0%, 100% 15%, 100% 85%, 85% 100%, 15% 100%, 0% 85%, 0% 15%)';
+    }
+    return 'none';
   }
 
   /**
@@ -447,7 +476,7 @@ class Sidebar {
       // 计算相对于画布的坐标
       const x = e.clientX - canvasRect.left;
       const y = e.clientY - canvasRect.top;
-      
+
       console.log('拖拽释放位置:', { clientX: e.clientX, clientY: e.clientY, canvasX: x, canvasY: y });
 
       // 转换坐标到SVG坐标系
@@ -466,7 +495,7 @@ class Sidebar {
 
       if (node) {
         console.log('成功创建' + nodeType + '节点:', node.id, '位置:', node.position());
-        
+
         // 确保节点可见
         setTimeout(() => {
           node.toFront();

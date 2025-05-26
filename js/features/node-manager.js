@@ -243,16 +243,22 @@ class NodeManager {
     const size = CONFIG.nodes.sizes.switch;
     const colors = CONFIG.nodes.colors;
 
-    const node = new joint.shapes.standard.Rectangle();
+    // 使用Polygon创建六边形Switch节点
+    const node = new joint.shapes.standard.Polygon();
     node.position(x - size.width/2, y - size.height/2);
     node.resize(size.width, size.height);
+
+    // 定义八边形的点坐标 (相对于节点尺寸的百分比)
+    // 八边形: 矩形四角切角，创建8个点
+    // 从左上角开始顺时针: 左上切角 -> 右上切角 -> 右上 -> 右下 -> 右下切角 -> 左下切角 -> 左下 -> 左上
+    const octagonPoints = '15,0 85,0 100,15 100,85 85,100 15,100 0,85 0,15';
+
     node.attr({
       body: {
         fill: colors.switch,
         stroke: colors.switchStroke,
         strokeWidth: 3,
-        rx: 10,
-        ry: 10,
+        refPoints: octagonPoints,
         pointerEvents: 'auto'
       },
       label: {
