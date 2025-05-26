@@ -54,6 +54,10 @@ class WorkflowApp {
       propertyPanel: null
     };
 
+    // 功能管理器
+    this.commandHistory = null;
+    this.clipboardManager = null;
+
     this.isWorkflowAppInitialized = false; // Initialize property
   }
 
@@ -73,6 +77,9 @@ class WorkflowApp {
 
       // 初始化样式
       this.initStyles();
+
+      // 初始化功能管理器
+      this.initManagers();
 
       console.log('工作流应用初始化完成');
 
@@ -2009,6 +2016,49 @@ class WorkflowApp {
       }
     `;
     document.head.appendChild(style);
+  }
+
+  /**
+   * 初始化功能管理器
+   */
+  initManagers() {
+    try {
+      console.log('开始初始化功能管理器...');
+
+      // 检查必要的类是否可用
+      if (typeof CommandHistory === 'undefined') {
+        console.error('CommandHistory 类未定义');
+        return;
+      }
+      if (typeof ClipboardManager === 'undefined') {
+        console.error('ClipboardManager 类未定义');
+        return;
+      }
+
+      // 初始化命令历史管理器
+      this.commandHistory = new CommandHistory(this);
+      console.log('命令历史管理器已初始化:', this.commandHistory);
+
+      // 初始化剪贴板管理器
+      this.clipboardManager = new ClipboardManager(this);
+      console.log('剪贴板管理器已初始化:', this.clipboardManager);
+
+      console.log('功能管理器初始化完成');
+
+      // 测试功能是否可用
+      console.log('撤销/重做功能状态:', {
+        canUndo: this.commandHistory.canUndo(),
+        canRedo: this.commandHistory.canRedo()
+      });
+      console.log('剪贴板功能状态:', {
+        isEmpty: this.clipboardManager.isEmpty()
+      });
+
+    } catch (error) {
+      console.error('功能管理器初始化失败:', error);
+      ErrorHandler.handle(error, '功能管理器初始化');
+      throw error;
+    }
   }
 
   /**

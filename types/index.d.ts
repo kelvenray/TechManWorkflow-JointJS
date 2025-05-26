@@ -60,8 +60,8 @@ interface PortGroupConfig {
 }
 
 // 快捷键配置类型
-type ShortcutAction = 'undo' | 'redo' | 'save' | 'selectAll' | 'deleteSelected' | 'clearSelection' | 
-                     'zoomIn' | 'zoomOut' | 'resetZoom' | 'toggleMinimap' | 'panMode';
+type ShortcutAction = 'undo' | 'redo' | 'save' | 'selectAll' | 'deleteSelected' | 'clearSelection' |
+                     'zoomIn' | 'zoomOut' | 'resetZoom' | 'toggleMinimap' | 'panMode' | 'copy' | 'paste';
 
 // 节点类型枚举
 type NodeType = 'start' | 'end' | 'process' | 'decision' | 'switch' | 'container';
@@ -76,12 +76,12 @@ interface AppState {
   lastClientX: number;
   lastClientY: number;
   zoomLevel: number;
-  
+
   // 图标状态
   nodeDeleteIcon: HTMLElement | null;
   nodePropertyIcon: HTMLElement | null;
   hideIconTimeout: number | null;
-  
+
   // 容器调整大小状态
   resizingContainer: joint.dia.Element | null;
   resizeDirection: string | null;
@@ -89,7 +89,7 @@ interface AppState {
   initialSize: { width: number; height: number } | null;
   initialPosition: { x: number; y: number } | null;
   initialMousePosition: { x: number; y: number } | null;
-  
+
   // 拖拽状态
   dragType: NodeType | null;
   draggedElement: HTMLElement | null;
@@ -243,7 +243,9 @@ declare class WorkflowApp {
   eventManager: EventManager;
   state: AppState;
   components: AppComponents;
-  
+  commandHistory: CommandHistory;
+  clipboardManager: ClipboardManager;
+
   constructor();
   init(): Promise<void>;
   destroy(): void;
@@ -253,11 +255,42 @@ declare class WorkflowApp {
 declare class NodeManager {
   constructor(app: WorkflowApp);
   createNode(type: NodeType, x: number, y: number, options?: any): joint.dia.Element | null;
-  deleteNode(node: joint.dia.Element): boolean | null;
+  createNodeDirect(type: NodeType, x: number, y: number, options?: any): joint.dia.Element | null;
+  deleteNode(node: joint.dia.Element, options?: any): boolean | null;
+  deleteNodeDirect(node: joint.dia.Element): boolean | null;
   updateSwitchPorts(node: joint.dia.Element, cases: SwitchCase[]): void;
   validateNode(node: joint.dia.Element): ValidationResult;
   cloneNode(node: joint.dia.Element, offsetX?: number, offsetY?: number): joint.dia.Element | null;
   getNodeInfo(node: joint.dia.Element): NodeInfo;
+}
+
+declare class CommandHistory {
+  constructor(app: WorkflowApp);
+  executeCommand(command: BaseCommand): any;
+  undo(): boolean;
+  redo(): boolean;
+  canUndo(): boolean;
+  canRedo(): boolean;
+  isExecutingCommand(): boolean;
+  clear(): void;
+  getStatus(): any;
+}
+
+declare class BaseCommand {
+  constructor(app: WorkflowApp, description?: string);
+  execute(): any;
+  undo(): void;
+  getDescription(): string;
+  getTimestamp(): number;
+}
+
+declare class ClipboardManager {
+  constructor(app: WorkflowApp);
+  copy(): boolean;
+  paste(): joint.dia.Element[] | false;
+  clear(): void;
+  isEmpty(): boolean;
+  getStatus(): any;
 }
 
 declare class Sidebar {

@@ -31,6 +31,25 @@ async function initWorkflowApp() {
     // 应用启动完成
     console.log('工作流应用启动完成！');
 
+    // 验证撤销/重做和复制/粘贴功能
+    setTimeout(() => {
+      console.log('🔍 验证撤销/重做和复制/粘贴功能...');
+      checkUndoRedoCopyPasteStatus();
+
+      // 测试键盘快捷键绑定
+      console.log('🎹 键盘快捷键配置:', SHORTCUTS);
+
+      // 提示用户如何测试
+      console.log('📝 测试说明:');
+      console.log('1. 从侧边栏拖拽节点到画布');
+      console.log('2. 点击选中节点');
+      console.log('3. 按 Ctrl+C 复制节点');
+      console.log('4. 按 Ctrl+V 粘贴节点');
+      console.log('5. 按 Ctrl+Z 撤销操作');
+      console.log('6. 按 Ctrl+Y 重做操作');
+      console.log('7. 或在控制台运行: WorkflowAPI.checkUndoRedoCopyPasteStatus()');
+    }, 1000);
+
   } catch (error) {
     ErrorHandler.handle(error, '应用初始化');
     console.error('应用启动失败:', error);
@@ -48,11 +67,14 @@ function checkDependencies() {
     { name: 'EventManager', check: () => typeof EventManager !== 'undefined' },
     { name: 'WorkflowApp', check: () => typeof WorkflowApp !== 'undefined' },
     { name: 'NodeManager', check: () => typeof NodeManager !== 'undefined' },
-    { name: 'Sidebar', check: () => typeof Sidebar !== 'undefined' }
+    { name: 'Sidebar', check: () => typeof Sidebar !== 'undefined' },
+    { name: 'CommandHistory', check: () => typeof CommandHistory !== 'undefined' },
+    { name: 'ClipboardManager', check: () => typeof ClipboardManager !== 'undefined' },
+    { name: 'BaseCommand', check: () => typeof BaseCommand !== 'undefined' }
   ];
 
   const missing = dependencies.filter(dep => !dep.check());
-  
+
   if (missing.length > 0) {
     const missingNames = missing.map(dep => dep.name).join(', ');
     throw new Error(`缺少必要的依赖: ${missingNames}`);
@@ -80,6 +102,11 @@ async function initComponents() {
     const zoomToolbar = new ZoomToolbar(workflowApp);
     zoomToolbar.init();
     workflowApp.components.zoomToolbar = zoomToolbar;
+
+    // 初始化撤销/重做工具栏
+    const undoRedoToolbar = new UndoRedoToolbar(workflowApp);
+    undoRedoToolbar.init();
+    workflowApp.components.undoRedoToolbar = undoRedoToolbar;
 
     // 初始化属性面板
     const propertyPanel = new PropertyPanel(workflowApp);
@@ -144,14 +171,19 @@ function handleKeyboardShortcuts(e) {
   if (e.ctrlKey || e.metaKey) key.push('Ctrl');
   if (e.shiftKey) key.push('Shift');
   if (e.altKey) key.push('Alt');
-  
+
   // 特殊键处理
   let keyName = e.key;
   if (keyName === ' ') keyName = 'Space';
   if (keyName === '+') keyName = '+';
   if (keyName === '=') keyName = '=';
   if (keyName === '-') keyName = '-';
-  
+
+  // 将字母键转换为大写以匹配SHORTCUTS配置
+  if (keyName.length === 1 && keyName.match(/[a-z]/i)) {
+    keyName = keyName.toUpperCase();
+  }
+
   key.push(keyName);
   const shortcut = key.join('+');
 
@@ -162,6 +194,7 @@ function handleKeyboardShortcuts(e) {
   if (action) {
     e.preventDefault();
     executeShortcutAction(action);
+    console.log('执行快捷键操作:', action);
   }
 }
 
@@ -177,12 +210,16 @@ function executeShortcutAction(action) {
         saveWorkflow();
         break;
       case 'undo':
-        // TODO: 实现撤销功能
-        console.log('撤销操作');
+        undoOperation();
         break;
       case 'redo':
-        // TODO: 实现重做功能
-        console.log('重做操作');
+        redoOperation();
+        break;
+      case 'copy':
+        copySelectedNodes();
+        break;
+      case 'paste':
+        pasteNodes();
         break;
       case 'selectAll':
         selectAllElements();
@@ -224,7 +261,7 @@ function saveWorkflow() {
   try {
     const data = workflowApp.graph.toJSON();
     const jsonString = JSON.stringify(data, null, 2);
-    
+
     // 创建下载链接
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -233,9 +270,9 @@ function saveWorkflow() {
     a.download = 'workflow.json';
     a.click();
     URL.revokeObjectURL(url);
-    
+
     console.log('工作流已保存');
-    
+
   } catch (error) {
     ErrorHandler.handle(error, '工作流保存');
   }
@@ -289,13 +326,13 @@ function zoomCanvas(delta) {
       CONFIG.canvas.minScale,
       Math.min(CONFIG.canvas.maxScale, currentScale + delta)
     );
-    
+
     if (newScale !== currentScale) {
       workflowApp.paper.scale(newScale);
       workflowApp.state.zoomLevel = newScale;
       console.log(`缩放级别: ${(newScale * 100).toFixed(0)}%`);
     }
-    
+
   } catch (error) {
     ErrorHandler.handle(error, '画布缩放');
   }
@@ -359,19 +396,19 @@ function loadWorkflow(file) {
 function validateWorkflow() {
   try {
     const result = ValidationUtils.validateWorkflow(workflowApp.graph);
-    
+
     console.log('工作流验证结果:', result);
-    
+
     if (result.errors.length > 0) {
       console.error('工作流验证错误:', result.errors);
     }
-    
+
     if (result.warnings.length > 0) {
       console.warn('工作流验证警告:', result.warnings);
     }
-    
+
     return result;
-    
+
   } catch (error) {
     ErrorHandler.handle(error, '工作流验证');
     return { isValid: false, errors: [error.message], warnings: [] };
@@ -385,7 +422,7 @@ function getWorkflowStats() {
   try {
     const elements = workflowApp.graph.getElements();
     const links = workflowApp.graph.getLinks();
-    
+
     const stats = {
       totalNodes: elements.length,
       totalLinks: links.length,
@@ -398,14 +435,14 @@ function getWorkflowStats() {
     elements.forEach(element => {
       const type = element.get('type');
       const label = element.attr('label/text');
-      
+
       stats.nodeTypes[type] = (stats.nodeTypes[type] || 0) + 1;
-      
+
       if (type === 'standard.Circle') {
         if (label === '开始') stats.startNodes++;
         if (label === '结束') stats.endNodes++;
       }
-      
+
       const connectedLinks = workflowApp.graph.getConnectedLinks(element);
       if (connectedLinks.length === 0) {
         stats.isolatedNodes++;
@@ -413,7 +450,7 @@ function getWorkflowStats() {
     });
 
     return stats;
-    
+
   } catch (error) {
     ErrorHandler.handle(error, '获取工作流统计');
     return null;
@@ -447,6 +484,130 @@ function exportWorkflowImage() {
   }
 }
 
+/**
+ * 撤销操作
+ */
+function undoOperation() {
+  try {
+    if (workflowApp && workflowApp.commandHistory) {
+      const success = workflowApp.commandHistory.undo();
+      if (success) {
+        console.log('撤销操作成功');
+      } else {
+        console.log('没有可撤销的操作');
+      }
+    }
+  } catch (error) {
+    ErrorHandler.handle(error, '撤销操作');
+  }
+}
+
+/**
+ * 重做操作
+ */
+function redoOperation() {
+  try {
+    if (workflowApp && workflowApp.commandHistory) {
+      const success = workflowApp.commandHistory.redo();
+      if (success) {
+        console.log('重做操作成功');
+      } else {
+        console.log('没有可重做的操作');
+      }
+    }
+  } catch (error) {
+    ErrorHandler.handle(error, '重做操作');
+  }
+}
+
+/**
+ * 复制选中的节点
+ */
+function copySelectedNodes() {
+  try {
+    if (workflowApp && workflowApp.clipboardManager) {
+      const success = workflowApp.clipboardManager.copy();
+      if (success) {
+        console.log('节点复制成功');
+      } else {
+        console.log('没有可复制的节点');
+      }
+    }
+  } catch (error) {
+    ErrorHandler.handle(error, '复制节点');
+  }
+}
+
+/**
+ * 粘贴节点
+ */
+function pasteNodes() {
+  try {
+    if (workflowApp && workflowApp.clipboardManager) {
+      const pastedNodes = workflowApp.clipboardManager.paste();
+      if (pastedNodes && pastedNodes.length > 0) {
+        console.log(`粘贴了 ${pastedNodes.length} 个节点`);
+      } else {
+        console.log('剪贴板为空或粘贴失败');
+      }
+    }
+  } catch (error) {
+    ErrorHandler.handle(error, '粘贴节点');
+  }
+}
+
+/**
+ * 检查撤销/重做和复制/粘贴功能状态
+ */
+function checkUndoRedoCopyPasteStatus() {
+  if (!workflowApp) {
+    console.log('❌ 应用未初始化');
+    return;
+  }
+
+  console.log('🔍 检查撤销/重做和复制/粘贴功能状态:');
+
+  // 检查命令历史
+  if (workflowApp.commandHistory) {
+    const historyStatus = workflowApp.commandHistory.getStatus();
+    console.log('✅ 命令历史管理器:', {
+      可撤销: historyStatus.canUndo,
+      可重做: historyStatus.canRedo,
+      撤销栈大小: historyStatus.undoCount,
+      重做栈大小: historyStatus.redoCount,
+      正在执行: historyStatus.isExecuting
+    });
+  } else {
+    console.log('❌ 命令历史管理器未初始化');
+  }
+
+  // 检查剪贴板
+  if (workflowApp.clipboardManager) {
+    const clipboardStatus = workflowApp.clipboardManager.getStatus();
+    console.log('✅ 剪贴板管理器:', {
+      是否为空: clipboardStatus.isEmpty,
+      节点数量: clipboardStatus.nodeCount,
+      粘贴次数: clipboardStatus.pasteCount
+    });
+  } else {
+    console.log('❌ 剪贴板管理器未初始化');
+  }
+
+  // 检查选中状态
+  console.log('📋 当前状态:', {
+    选中元素: workflowApp.state.selectedElement ? workflowApp.state.selectedElement.id : '无',
+    悬停元素: workflowApp.state.hoveredElement ? workflowApp.state.hoveredElement.id : '无'
+  });
+
+  // 检查命令类是否可用
+  console.log('🔧 命令类可用性:', {
+    CreateNodeCommand: typeof CreateNodeCommand !== 'undefined',
+    DeleteNodeCommand: typeof DeleteNodeCommand !== 'undefined',
+    BatchCommand: typeof BatchCommand !== 'undefined',
+    BaseCommand: typeof BaseCommand !== 'undefined'
+  });
+}
+
 // 暴露全局API
 window.WorkflowAPI = {
   saveWorkflow,
@@ -457,7 +618,18 @@ window.WorkflowAPI = {
   exportWorkflowImage,
   zoomCanvas,
   resetZoom,
-  togglePanMode
+  togglePanMode,
+  undoOperation,
+  redoOperation,
+  copySelectedNodes,
+  pasteNodes,
+  checkUndoRedoCopyPasteStatus,
+  // 新增工具栏状态检查
+  getUndoRedoToolbarStatus: () => {
+    return workflowApp && workflowApp.components.undoRedoToolbar
+      ? workflowApp.components.undoRedoToolbar.getStatus()
+      : null;
+  }
 };
 
 // 页面加载完成后初始化应用

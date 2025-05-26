@@ -23,6 +23,38 @@ class NodeManager {
    */
   createNode(type, x, y, options = {}) {
     console.log('[createNode] *** 开始创建节点 ***', type, 'at', x, y);
+
+    try {
+      // 如果不跳过历史记录且有命令历史管理器，使用命令模式
+      if (!options.skipHistory &&
+          this.app.commandHistory &&
+          !this.app.commandHistory.isExecutingCommand() &&
+          typeof CreateNodeCommand !== 'undefined') {
+        const command = new CreateNodeCommand(this.app, type, x, y, options);
+        return this.app.commandHistory.executeCommand(command);
+      }
+
+      // 直接创建节点（用于撤销/重做或跳过历史记录的情况）
+      console.log('[createNode] 使用直接创建模式');
+      return this.createNodeDirect(type, x, y, options);
+
+    } catch (error) {
+      console.error('[createNode] 创建节点失败，尝试直接创建:', error);
+      // 如果命令模式失败，回退到直接创建
+      try {
+        return this.createNodeDirect(type, x, y, options);
+      } catch (fallbackError) {
+        ErrorHandler.handle(fallbackError, `创建${type}节点`);
+        return null;
+      }
+    }
+  }
+
+  /**
+   * 直接创建节点（不记录历史）
+   */
+  createNodeDirect(type, x, y, options = {}) {
+    console.log('[createNodeDirect] *** 直接创建节点 ***', type, 'at', x, y);
     let node = null;
 
     try {
@@ -53,19 +85,19 @@ class NodeManager {
       }
 
       if (node) {
-        console.log(`[createNode] 节点创建后 isContainer 值:`, node.isContainer);
+        console.log(`[createNodeDirect] 节点创建后 isContainer 值:`, node.isContainer);
 
         // 添加端口（除了容器节点外）
         this.addNodePorts(node, type);
-        console.log(`[createNode] 添加端口后 isContainer 值:`, node.isContainer);
+        console.log(`[createNodeDirect] 添加端口后 isContainer 值:`, node.isContainer);
 
         // 添加到图形
         node.addTo(this.graph);
-        console.log(`[createNode] 添加到图形后 isContainer 值:`, node.isContainer);
+        console.log(`[createNodeDirect] 添加到图形后 isContainer 值:`, node.isContainer);
 
         // 检查容器嵌套
         this.checkContainerEmbedding(node);
-        console.log(`[createNode] 检查嵌套后 isContainer 值:`, node.isContainer);
+        console.log(`[createNodeDirect] 检查嵌套后 isContainer 值:`, node.isContainer);
 
         console.log(`创建${type}节点成功:`, node.id);
       }
@@ -73,7 +105,7 @@ class NodeManager {
       return node;
 
     } catch (error) {
-      ErrorHandler.handle(error, `创建${type}节点`);
+      ErrorHandler.handle(error, `直接创建${type}节点`);
       return null;
     }
   }
@@ -607,9 +639,42 @@ class NodeManager {
   /**
    * 删除节点
    */
-  deleteNode(node) {
+  deleteNode(node, options = {}) {
     try {
       console.log('[deleteNode] 开始删除节点:', node.id, node.get('type'));
+
+      // 如果不跳过历史记录且有命令历史管理器，使用命令模式
+      if (!options.skipHistory &&
+          this.app.commandHistory &&
+          !this.app.commandHistory.isExecutingCommand() &&
+          typeof DeleteNodeCommand !== 'undefined') {
+        const command = new DeleteNodeCommand(this.app, node);
+        return this.app.commandHistory.executeCommand(command);
+      }
+
+      // 直接删除节点（用于撤销/重做或跳过历史记录的情况）
+      console.log('[deleteNode] 使用直接删除模式');
+      return this.deleteNodeDirect(node);
+
+    } catch (error) {
+      console.error('[deleteNode] 删除节点失败，尝试直接删除:', error);
+      // 如果命令模式失败，回退到直接删除
+      try {
+        return this.deleteNodeDirect(node);
+      } catch (fallbackError) {
+        console.error('[deleteNode] 直接删除也失败:', fallbackError);
+        ErrorHandler.handle(fallbackError, '节点删除');
+        throw fallbackError;
+      }
+    }
+  }
+
+  /**
+   * 直接删除节点（不记录历史）
+   */
+  deleteNodeDirect(node) {
+    try {
+      console.log('[deleteNodeDirect] 直接删除节点:', node.id, node.get('type'));
 
       // 清除应用状态和UI元素
       this.clearNodeFromAppState(node);
@@ -619,22 +684,22 @@ class NodeManager {
 
       // 根据节点类型使用不同的删除策略
       if (node.isContainer) {
-        console.log('[deleteNode] 检测到容器节点，调用容器删除方法');
+        console.log('[deleteNodeDirect] 检测到容器节点，调用容器删除方法');
         this.deleteContainerNode(node);
       } else if (this.isStartOrEndNode(node)) {
-        console.log('[deleteNode] 检测到特殊节点，调用特殊删除方法');
+        console.log('[deleteNodeDirect] 检测到特殊节点，调用特殊删除方法');
         this.deleteSpecialNode(node);
       } else {
-        console.log('[deleteNode] 普通节点，直接删除');
+        console.log('[deleteNodeDirect] 普通节点，直接删除');
         node.remove();
       }
 
-      console.log('[deleteNode] 节点删除完成:', node.id);
+      console.log('[deleteNodeDirect] 节点删除完成:', node.id);
       return true;
     } catch (error) {
-      console.error('[deleteNode] 删除节点时出错:', error);
-      ErrorHandler.handle(error, '节点删除');
-      throw error; // 重新抛出错误，让调用者知道删除失败
+      console.error('[deleteNodeDirect] 删除节点时出错:', error);
+      ErrorHandler.handle(error, '直接删除节点');
+      throw error;
     }
   }
 

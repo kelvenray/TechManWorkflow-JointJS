@@ -46,6 +46,14 @@ const CONFIG = {
     dragThrottleDelay: 5, // 拖拽操作的节流延迟（非常短以确保平滑的拖拽体验）
     hideIconDelay: 300
   },
+  history: {
+    maxSize: 50, // 最大历史记录数量
+    enableAutoSave: true // 是否启用自动保存历史状态
+  },
+  clipboard: {
+    pasteOffset: { x: 30, y: 30 }, // 粘贴时的偏移量
+    maxCopyCount: 100 // 最大复制节点数量
+  },
   ports: {
     radius: 4,
     hoverRadius: 5,
@@ -131,8 +139,11 @@ const PORT_GROUPS = {
 const SHORTCUTS = {
   'Ctrl+Z': 'undo',
   'Ctrl+Y': 'redo',
+  'Ctrl+Shift+Z': 'redo', // Alternative redo shortcut
   'Ctrl+S': 'save',
   'Ctrl+A': 'selectAll',
+  'Ctrl+C': 'copy',
+  'Ctrl+V': 'paste',
   'Delete': 'deleteSelected',
   'Backspace': 'deleteSelected',
   'Escape': 'clearSelection',

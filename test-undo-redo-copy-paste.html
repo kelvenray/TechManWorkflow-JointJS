@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>撤销/重做和复制/粘贴功能测试</title>
+    
+    <!-- JointJS CSS -->
+    <link rel="stylesheet" href="js/lib/jointjs-3.7.7.min.css">
+    
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+        }
+        
+        .test-container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .test-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+        
+        .test-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .test-button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            background: #2196F3;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+        
+        .test-button:hover {
+            background: #1976D2;
+        }
+        
+        .test-button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        
+        .test-status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-size: 14px;
+        }
+        
+        .status-info {
+            background: #e3f2fd;
+            color: #1976d2;
+            border: 1px solid #bbdefb;
+        }
+        
+        .status-success {
+            background: #e8f5e8;
+            color: #2e7d32;
+            border: 1px solid #c8e6c9;
+        }
+        
+        .status-error {
+            background: #ffebee;
+            color: #c62828;
+            border: 1px solid #ffcdd2;
+        }
+        
+        #canvas {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+        
+        .instructions {
+            background: #fff3e0;
+            border: 1px solid #ffcc02;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #f57c00;
+        }
+        
+        .instructions ul {
+            margin-bottom: 0;
+        }
+        
+        .keyboard-shortcuts {
+            background: #f3e5f5;
+            border: 1px solid #ce93d8;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .keyboard-shortcuts h3 {
+            margin-top: 0;
+            color: #7b1fa2;
+        }
+        
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        
+        .shortcut-key {
+            font-family: monospace;
+            background: #e1bee7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <h3>📋 测试说明</h3>
+        <ul>
+            <li>使用下方按钮创建不同类型的节点</li>
+            <li>测试撤销/重做功能（按钮或键盘快捷键）</li>
+            <li>选中节点后测试复制/粘贴功能</li>
+            <li>观察状态信息的变化</li>
+        </ul>
+    </div>
+
+    <div class="keyboard-shortcuts">
+        <h3>⌨️ 键盘快捷键</h3>
+        <div class="shortcut-item">
+            <span>撤销</span>
+            <span class="shortcut-key">Ctrl+Z</span>
+        </div>
+        <div class="shortcut-item">
+            <span>重做</span>
+            <span class="shortcut-key">Ctrl+Y 或 Ctrl+Shift+Z</span>
+        </div>
+        <div class="shortcut-item">
+            <span>复制</span>
+            <span class="shortcut-key">Ctrl+C</span>
+        </div>
+        <div class="shortcut-item">
+            <span>粘贴</span>
+            <span class="shortcut-key">Ctrl+V</span>
+        </div>
+        <div class="shortcut-item">
+            <span>删除选中</span>
+            <span class="shortcut-key">Delete 或 Backspace</span>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-title">🎯 节点创建测试</div>
+        <div class="test-controls">
+            <button class="test-button" onclick="createTestNode('start')">创建开始节点</button>
+            <button class="test-button" onclick="createTestNode('process')">创建流程节点</button>
+            <button class="test-button" onclick="createTestNode('decision')">创建决策节点</button>
+            <button class="test-button" onclick="createTestNode('switch')">创建Switch节点</button>
+            <button class="test-button" onclick="createTestNode('container')">创建容器节点</button>
+            <button class="test-button" onclick="createTestNode('end')">创建结束节点</button>
+        </div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-title">↩️ 撤销/重做测试</div>
+        <div class="test-controls">
+            <button class="test-button" id="undoBtn" onclick="testUndo()">撤销 (Ctrl+Z)</button>
+            <button class="test-button" id="redoBtn" onclick="testRedo()">重做 (Ctrl+Y)</button>
+            <button class="test-button" onclick="clearHistory()">清空历史</button>
+        </div>
+        <div id="historyStatus" class="test-status status-info">
+            历史状态：撤销栈 0 | 重做栈 0
+        </div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-title">📋 复制/粘贴测试</div>
+        <div class="test-controls">
+            <button class="test-button" id="copyBtn" onclick="testCopy()">复制选中 (Ctrl+C)</button>
+            <button class="test-button" id="pasteBtn" onclick="testPaste()">粘贴 (Ctrl+V)</button>
+            <button class="test-button" onclick="clearClipboard()">清空剪贴板</button>
+        </div>
+        <div id="clipboardStatus" class="test-status status-info">
+            剪贴板状态：空
+        </div>
+    </div>
+
+    <div class="test-container">
+        <div class="test-title">🖼️ 工作流画布</div>
+        <div id="canvas"></div>
+    </div>
+
+    <!-- JointJS 依赖 -->
+    <script src="js/lib/jquery-3.7.1.min.js"></script>
+    <script src="js/lib/underscore-1.13.6.min.js"></script>
+    <script src="js/lib/backbone-1.4.1.min.js"></script>
+    <script src="js/lib/jointjs-3.7.7.min.js"></script>
+
+    <!-- 应用模块 -->
+    <script src="js/core/constants.js"></script>
+    <script src="js/utils/helpers.js"></script>
+    
+    <!-- 命令系统 -->
+    <script src="js/features/command-history.js"></script>
+    <script src="js/features/commands/node-commands.js"></script>
+    <script src="js/features/commands/property-commands.js"></script>
+    <script src="js/features/clipboard-manager.js"></script>
+    
+    <!-- 核心功能 -->
+    <script src="js/core/graph.js"></script>
+    <script src="js/features/node-manager.js"></script>
+
+    <script>
+        let workflowApp;
+        let nodeCounter = 0;
+
+        // 初始化应用
+        async function initApp() {
+            try {
+                workflowApp = new WorkflowApp();
+                await workflowApp.init();
+                
+                // 设置画布容器
+                document.getElementById('canvas').appendChild(workflowApp.paper.el);
+                
+                updateStatus();
+                console.log('测试应用初始化完成');
+                
+                // 添加事件监听器
+                workflowApp.paper.on('element:pointerclick', function(elementView) {
+                    workflowApp.state.selectedElement = elementView.model;
+                    updateStatus();
+                });
+                
+                workflowApp.paper.on('blank:pointerclick', function() {
+                    workflowApp.state.selectedElement = null;
+                    updateStatus();
+                });
+                
+            } catch (error) {
+                console.error('应用初始化失败:', error);
+                showStatus('error', '应用初始化失败: ' + error.message);
+            }
+        }
+
+        // 创建测试节点
+        function createTestNode(type) {
+            if (!workflowApp) {
+                showStatus('error', '应用未初始化');
+                return;
+            }
+
+            try {
+                const x = 100 + (nodeCounter % 5) * 150;
+                const y = 100 + Math.floor(nodeCounter / 5) * 100;
+                
+                const nodeManager = new NodeManager(workflowApp);
+                const node = nodeManager.createNode(type, x, y);
+                
+                if (node) {
+                    nodeCounter++;
+                    showStatus('success', `${type}节点创建成功`);
+                    updateStatus();
+                } else {
+                    showStatus('error', `${type}节点创建失败`);
+                }
+            } catch (error) {
+                console.error('创建节点失败:', error);
+                showStatus('error', '创建节点失败: ' + error.message);
+            }
+        }
+
+        // 测试撤销
+        function testUndo() {
+            if (!workflowApp || !workflowApp.commandHistory) {
+                showStatus('error', '命令历史未初始化');
+                return;
+            }
+
+            const success = workflowApp.commandHistory.undo();
+            if (success) {
+                showStatus('success', '撤销操作成功');
+            } else {
+                showStatus('info', '没有可撤销的操作');
+            }
+            updateStatus();
+        }
+
+        // 测试重做
+        function testRedo() {
+            if (!workflowApp || !workflowApp.commandHistory) {
+                showStatus('error', '命令历史未初始化');
+                return;
+            }
+
+            const success = workflowApp.commandHistory.redo();
+            if (success) {
+                showStatus('success', '重做操作成功');
+            } else {
+                showStatus('info', '没有可重做的操作');
+            }
+            updateStatus();
+        }
+
+        // 测试复制
+        function testCopy() {
+            if (!workflowApp || !workflowApp.clipboardManager) {
+                showStatus('error', '剪贴板管理器未初始化');
+                return;
+            }
+
+            const success = workflowApp.clipboardManager.copy();
+            if (success) {
+                showStatus('success', '节点复制成功');
+            } else {
+                showStatus('info', '没有可复制的节点或节点不可复制');
+            }
+            updateStatus();
+        }
+
+        // 测试粘贴
+        function testPaste() {
+            if (!workflowApp || !workflowApp.clipboardManager) {
+                showStatus('error', '剪贴板管理器未初始化');
+                return;
+            }
+
+            const result = workflowApp.clipboardManager.paste();
+            if (result && result.length > 0) {
+                showStatus('success', `粘贴了 ${result.length} 个节点`);
+            } else {
+                showStatus('info', '剪贴板为空或粘贴失败');
+            }
+            updateStatus();
+        }
+
+        // 清空历史
+        function clearHistory() {
+            if (workflowApp && workflowApp.commandHistory) {
+                workflowApp.commandHistory.clear();
+                showStatus('success', '历史记录已清空');
+                updateStatus();
+            }
+        }
+
+        // 清空剪贴板
+        function clearClipboard() {
+            if (workflowApp && workflowApp.clipboardManager) {
+                workflowApp.clipboardManager.clear();
+                showStatus('success', '剪贴板已清空');
+                updateStatus();
+            }
+        }
+
+        // 更新状态显示
+        function updateStatus() {
+            if (!workflowApp) return;
+
+            // 更新历史状态
+            if (workflowApp.commandHistory) {
+                const historyStatus = workflowApp.commandHistory.getStatus();
+                document.getElementById('historyStatus').textContent = 
+                    `历史状态：撤销栈 ${historyStatus.undoCount} | 重做栈 ${historyStatus.redoCount}`;
+                
+                // 更新按钮状态
+                document.getElementById('undoBtn').disabled = !historyStatus.canUndo;
+                document.getElementById('redoBtn').disabled = !historyStatus.canRedo;
+            }
+
+            // 更新剪贴板状态
+            if (workflowApp.clipboardManager) {
+                const clipboardStatus = workflowApp.clipboardManager.getStatus();
+                const selectedNode = workflowApp.state.selectedElement;
+                
+                document.getElementById('clipboardStatus').textContent = 
+                    `剪贴板状态：${clipboardStatus.isEmpty ? '空' : `${clipboardStatus.nodeCount} 个节点`} | 选中：${selectedNode ? '有节点' : '无'}`;
+                
+                // 更新按钮状态
+                document.getElementById('copyBtn').disabled = !selectedNode;
+                document.getElementById('pasteBtn').disabled = clipboardStatus.isEmpty;
+            }
+        }
+
+        // 显示状态消息
+        function showStatus(type, message) {
+            // 创建状态消息元素
+            const statusDiv = document.createElement('div');
+            statusDiv.className = `test-status status-${type}`;
+            statusDiv.textContent = message;
+            
+            // 插入到页面顶部
+            document.body.insertBefore(statusDiv, document.body.firstChild);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                if (statusDiv.parentNode) {
+                    statusDiv.parentNode.removeChild(statusDiv);
+                }
+            }, 3000);
+        }
+
+        // 页面加载完成后初始化
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>

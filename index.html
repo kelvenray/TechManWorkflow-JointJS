@@ -266,6 +266,115 @@
         .container-hover-effect:hover {
             filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
         }
+
+        /* 撤销/重做按钮工具栏样式 */
+        #undo-redo-toolbar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            padding: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            z-index: 1000;
+            transition: all 0.3s ease;
+        }
+
+        #undo-redo-toolbar:hover {
+            background-color: rgba(255, 255, 255, 0.95);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        }
+
+        #undo-redo-toolbar button {
+            background: none;
+            border: none;
+            width: 36px;
+            height: 36px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 16px;
+            color: #555;
+            transition: all 0.2s ease;
+            outline: none;
+            position: relative;
+        }
+
+        #undo-redo-toolbar button:hover {
+            background-color: rgba(0, 0, 0, 0.1);
+            transform: scale(1.05);
+        }
+
+        #undo-redo-toolbar button:active {
+            background-color: rgba(0, 0, 0, 0.2);
+            transform: scale(0.95);
+        }
+
+        #undo-redo-toolbar button:disabled {
+            color: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        #undo-redo-toolbar button:disabled:hover {
+            background-color: transparent;
+            transform: none;
+        }
+
+        /* 撤销/重做按钮图标样式 */
+        .undo-redo-icon {
+            width: 20px;
+            height: 20px;
+            fill: currentColor;
+            transition: fill 0.2s ease;
+        }
+
+        /* 工具提示样式 */
+        .tooltip {
+            position: absolute;
+            bottom: -35px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+            z-index: 10001;
+        }
+
+        #undo-redo-toolbar button:hover .tooltip {
+            opacity: 1;
+        }
+
+        /* 小屏幕适配 */
+        @media (max-width: 768px) {
+            #undo-redo-toolbar {
+                top: 10px;
+                right: 10px;
+                padding: 6px;
+            }
+
+            #undo-redo-toolbar button {
+                width: 32px;
+                height: 32px;
+            }
+
+            .undo-redo-icon {
+                width: 18px;
+                height: 18px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -274,6 +383,22 @@
 
     <!-- 平移模式指示器 -->
     <div class="panning-mode-indicator">画布平移模式</div>
+
+    <!-- 撤销/重做工具栏 -->
+    <div id="undo-redo-toolbar">
+        <button id="undo-btn" type="button" disabled>
+            <svg class="undo-redo-icon" viewBox="0 0 24 24">
+                <path d="M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 20.1,16L22.47,15.22C21.08,11.03 17.15,8 12.5,8Z" />
+            </svg>
+            <div class="tooltip">撤销 (Ctrl+Z)</div>
+        </button>
+        <button id="redo-btn" type="button" disabled>
+            <svg class="undo-redo-icon" viewBox="0 0 24 24">
+                <path d="M18.4,10.6C16.55,9 14.15,8 11.5,8C6.85,8 2.92,11.03 1.53,15.22L3.9,16C4.95,12.81 7.96,10.5 11.5,10.5C13.46,10.5 15.23,11.22 16.62,12.38L13,16H22V7L18.4,10.6Z" />
+            </svg>
+            <div class="tooltip">重做 (Ctrl+Y)</div>
+        </button>
+    </div>
 
     <!-- 小地图容器 -->
     <div id="minimap-container"></div>
@@ -298,6 +423,14 @@
         </button>
     </div>
 
+    <!-- 测试按钮 (开发时使用) -->
+    <div id="test-controls" style="position: fixed; top: 10px; right: 10px; z-index: 10000; background: rgba(0,0,0,0.8); padding: 10px; border-radius: 5px; display: none;">
+        <button onclick="WorkflowAPI.checkUndoRedoCopyPasteStatus()" style="margin: 2px; padding: 5px 10px; background: #2196F3; color: white; border: none; border-radius: 3px; cursor: pointer;">检查状态</button>
+        <button onclick="testUndoRedo()" style="margin: 2px; padding: 5px 10px; background: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">测试撤销/重做</button>
+        <button onclick="testCopyPaste()" style="margin: 2px; padding: 5px 10px; background: #FF9800; color: white; border: none; border-radius: 3px; cursor: pointer;">测试复制/粘贴</button>
+        <button onclick="document.getElementById('test-controls').style.display='none'" style="margin: 2px; padding: 5px 10px; background: #f44336; color: white; border: none; border-radius: 3px; cursor: pointer;">隐藏</button>
+    </div>
+
     <!-- 加载指示器 -->
     <div class="loading-indicator" id="loading-indicator">
         <div class="loading-spinner"></div>
@@ -313,11 +446,20 @@
     <!-- 应用模块 -->
     <script src="js/core/constants.js"></script>
     <script src="js/utils/helpers.js"></script>
+
+    <!-- 命令系统 -->
+    <script src="js/features/command-history.js"></script>
+    <script src="js/features/commands/node-commands.js"></script>
+    <script src="js/features/commands/property-commands.js"></script>
+    <script src="js/features/clipboard-manager.js"></script>
+
+    <!-- 核心功能 -->
     <script src="js/core/graph.js"></script>
     <script src="js/features/node-manager.js"></script>
     <script src="js/components/sidebar.js"></script>
     <script src="js/components/minimap.js"></script>
     <script src="js/components/zoom-toolbar.js"></script>
+    <script src="js/components/undo-redo-toolbar.js"></script>
     <script src="js/components/property-panel.js"></script>
 
     <!-- 主应用入口 -->
@@ -337,6 +479,76 @@
                 }
             }, 1000);
         });
+
+        // 按 Ctrl+Shift+T 显示测试控件
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.shiftKey && e.key === 'T') {
+                const testControls = document.getElementById('test-controls');
+                testControls.style.display = testControls.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+
+        // 测试撤销/重做功能
+        function testUndoRedo() {
+            console.log('🧪 开始测试撤销/重做功能...');
+
+            // 创建一个测试节点
+            if (workflowApp) {
+                const nodeManager = new NodeManager(workflowApp);
+                const node = nodeManager.createNode('process', 200, 200);
+
+                if (node) {
+                    console.log('✅ 节点创建成功:', node.id);
+
+                    setTimeout(() => {
+                        console.log('🔄 测试撤销...');
+                        WorkflowAPI.undoOperation();
+
+                        setTimeout(() => {
+                            console.log('🔄 测试重做...');
+                            WorkflowAPI.redoOperation();
+                        }, 1000);
+                    }, 1000);
+                } else {
+                    console.log('❌ 节点创建失败');
+                }
+            }
+        }
+
+        // 测试复制/粘贴功能
+        function testCopyPaste() {
+            console.log('🧪 开始测试复制/粘贴功能...');
+
+            if (workflowApp) {
+                const elements = workflowApp.graph.getElements();
+                if (elements.length > 0) {
+                    // 选中第一个节点
+                    const firstNode = elements[0];
+                    workflowApp.state.selectedElement = firstNode;
+                    console.log('✅ 已选中节点:', firstNode.id);
+
+                    setTimeout(() => {
+                        console.log('📋 测试复制...');
+                        WorkflowAPI.copySelectedNodes();
+
+                        setTimeout(() => {
+                            console.log('📋 测试粘贴...');
+                            WorkflowAPI.pasteNodes();
+                        }, 1000);
+                    }, 1000);
+                } else {
+                    console.log('❌ 画布上没有节点，请先创建一个节点');
+                    // 创建一个节点用于测试
+                    const nodeManager = new NodeManager(workflowApp);
+                    const node = nodeManager.createNode('process', 150, 150);
+                    if (node) {
+                        console.log('✅ 已创建测试节点:', node.id);
+                        workflowApp.state.selectedElement = node;
+                        setTimeout(() => testCopyPaste(), 1000);
+                    }
+                }
+            }
+        }
     </script>
 </body>
 </html>
