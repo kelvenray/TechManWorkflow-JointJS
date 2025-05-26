@@ -115,9 +115,15 @@ class ClipboardManager {
       this.pasteCount++;
       console.log(`[ClipboardManager] 已粘贴 ${pastedNodes.length} 个节点`);
 
-      // 选中粘贴的节点（如果只有一个）
+      // 选中粘贴的节点
       if (pastedNodes.length === 1) {
+        // 单个节点使用单选
+        this.app.clearMultiSelection();
         this.app.state.selectedElement = pastedNodes[0];
+      } else if (pastedNodes.length > 1) {
+        // 多个节点使用多选
+        this.app.clearSelection();
+        this.app.enableMultiSelection(pastedNodes);
       }
 
       return pastedNodes;
@@ -154,14 +160,17 @@ class ClipboardManager {
   getSelectedNodes() {
     const selectedNodes = [];
 
+    // 优先获取多选的节点
+    if (this.app.state.multiSelection.enabled &&
+        this.app.state.multiSelection.selectedElements.length > 0) {
+      selectedNodes.push(...this.app.state.multiSelection.selectedElements);
+    }
     // 获取当前选中的元素
-    if (this.app.state.selectedElement && this.app.state.selectedElement.isElement()) {
+    else if (this.app.state.selectedElement && this.app.state.selectedElement.isElement()) {
       selectedNodes.push(this.app.state.selectedElement);
     }
-
     // 获取悬停的元素（如果没有选中元素）
-    if (selectedNodes.length === 0 &&
-        this.app.state.hoveredElement &&
+    else if (this.app.state.hoveredElement &&
         this.app.state.hoveredElement.isElement()) {
       selectedNodes.push(this.app.state.hoveredElement);
     }

@@ -21,6 +21,22 @@ class WorkflowApp {
       lastClientY: 0,
       zoomLevel: 1,
 
+      // 多选状态
+      multiSelection: {
+        enabled: false,
+        selectedElements: [], // 多选的节点数组
+        isSelecting: false, // 是否正在进行矩形选择
+        selectionRect: null, // 选择矩形元素
+        startPoint: null, // 矩形选择起始点
+        endPoint: null, // 矩形选择结束点
+
+        // 多选拖拽状态
+        isDragging: false, // 是否正在拖拽多选节点
+        draggedElement: null, // 被拖拽的主要元素
+        initialPositions: null, // 所有选中节点的初始位置
+        initialMousePosition: null // 鼠标初始位置
+      },
+
       // 图标状态
       nodeDeleteIcon: null,
       nodePropertyIcon: null,
@@ -455,6 +471,12 @@ class WorkflowApp {
         this.state.lastClientX = evt.originalEvent.clientX;
         this.state.lastClientY = evt.originalEvent.clientY;
         document.body.style.cursor = 'grabbing';
+        return;
+      }
+
+      // 检查是否开始矩形选择
+      if (evt.originalEvent && evt.originalEvent.button === 0) { // 左键
+        this.startRectangleSelection(evt, x, y);
       }
     });
 
@@ -482,7 +504,16 @@ class WorkflowApp {
       }
     }, CONFIG.ui.mouseMoveDebounceDelay);
 
-    this.paper.on('blank:pointermove', debouncedPanMove);
+    // 画布空白区域移动事件
+    this.paper.on('blank:pointermove', (evt, x, y) => {
+      // 处理平移
+      debouncedPanMove(evt, x, y);
+
+      // 处理矩形选择
+      if (this.state.multiSelection.isSelecting) {
+        this.updateRectangleSelection(evt, x, y);
+      }
+    });
 
     /**
      * @param {joint.dia.Event} evt
@@ -492,6 +523,11 @@ class WorkflowApp {
         evt.preventDefault();
         this.state.isPanning = false;
         document.body.style.cursor = this.state.isPanningMode ? 'grab' : 'default';
+      }
+
+      // 结束矩形选择
+      if (this.state.multiSelection.isSelecting) {
+        this.endRectangleSelection(evt);
       }
     });
 
@@ -593,6 +629,17 @@ class WorkflowApp {
     console.log('[handleElementClick] 节点被点击:', element.id, '类型:', element.get('type'));
     console.log('[handleElementClick] 当前interactive配置:', this.paper.options.interactive);
 
+    // 检查是否按住Ctrl键进行多选
+    if (evt.originalEvent && (evt.originalEvent.ctrlKey || evt.originalEvent.metaKey)) {
+      this.handleCtrlClick(element);
+      return;
+    }
+
+    // 如果当前有多选状态，清除多选
+    if (this.state.multiSelection.enabled) {
+      this.clearMultiSelection();
+    }
+
     // 如果点击的是已选中的节点，则取消选择
     if (this.state.selectedElement === element) {
       console.log('[handleElementClick] 取消选择节点:', element.id);
@@ -640,12 +687,19 @@ class WorkflowApp {
   handleElementPointerDown(elementView, evt) {
     const element = elementView.model;
 
+    // 检查是否在多选模式下拖拽
+    if (this.state.multiSelection.enabled &&
+        this.state.multiSelection.selectedElements.includes(element)) {
+      // 多选拖拽模式
+      this.startMultiSelectionDrag(element, evt);
+      return;
+    }
+
     // 只有非容器节点或者容器节点本身被拖拽时才标记拖拽状态
     // 这样可以避免容器内节点拖拽时误判
     if (!element.isContainer || evt.target === elementView.el) {
       this.state.isDragging = true;
       this.state.draggedNode = element;
-
 
       // 如果拖拽的是嵌套在容器中的节点，先将其从容器中移除
       // 这样可以防止拖拽时容器跟着移动
@@ -965,8 +1019,9 @@ class WorkflowApp {
   handleBlankClick(_evt) {
     console.log('空白处被点击');
 
-    // 取消所有选择
+    // 取消所有选择（包括多选）
     this.clearSelection();
+    this.clearMultiSelection();
 
     // 隐藏属性面板
     if (this.components.propertyPanel) {
@@ -1216,6 +1271,12 @@ class WorkflowApp {
     console.log('[showNodeIcons] Called for element:', element.id, 'Type:', element.get('type'));
     console.log('[showNodeIcons] joint.elementTools:', joint.elementTools);
 
+    // 如果当前处于多选模式，不显示图标
+    if (this.state.multiSelection.enabled) {
+      console.log('[showNodeIcons] 多选模式下不显示图标');
+      return;
+    }
+
     const elementView = this.paper.findViewByModel(element);
     if (!elementView) {
         console.error('[showNodeIcons] No elementView found for element:', element.id);
@@ -1436,6 +1497,11 @@ class WorkflowApp {
 
       if (this.state.currentEditingNode === cell) {
         this.state.currentEditingNode = null;
+      }
+
+      // 从多选中移除（如果存在）
+      if (this.state.multiSelection.enabled) {
+        this.removeFromMultiSelection(cell);
       }
 
       // 关闭属性面板（增强版本，包含多重检查）
@@ -2014,6 +2080,19 @@ class WorkflowApp {
       .resize-handle-se {
         cursor: se-resize;
       }
+
+      /* 多选高亮样式 */
+      .multi-selection-highlight {
+        outline: 2px solid #1976d2 !important;
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 2px rgba(25, 118, 210, 0.3) !important;
+      }
+
+      /* 选择矩形样式 */
+      .selection-rectangle {
+        pointer-events: none;
+        z-index: 1000;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -2058,6 +2137,540 @@ class WorkflowApp {
       console.error('功能管理器初始化失败:', error);
       ErrorHandler.handle(error, '功能管理器初始化');
       throw error;
+    }
+  }
+
+  // ==================== 多选功能方法 ====================
+
+  /**
+   * 开始矩形选择
+   * @param {joint.dia.Event} evt
+   * @param {number} x
+   * @param {number} y
+   */
+  startRectangleSelection(evt, x, y) {
+    // 如果正在平移或调整大小，不开始矩形选择
+    if (this.state.isPanning || this.state.resizingContainer) {
+      return;
+    }
+
+    console.log('[MultiSelection] 开始矩形选择', x, y);
+
+    this.state.multiSelection.isSelecting = true;
+    this.state.multiSelection.startPoint = { x, y };
+    this.state.multiSelection.endPoint = { x, y };
+
+    // 创建选择矩形
+    this.createSelectionRectangle(x, y);
+
+    // 清除现有选择
+    this.clearSelection();
+    this.clearMultiSelection();
+  }
+
+  /**
+   * 更新矩形选择
+   * @param {joint.dia.Event} evt
+   * @param {number} x
+   * @param {number} y
+   */
+  updateRectangleSelection(evt, x, y) {
+    if (!this.state.multiSelection.isSelecting || !this.state.multiSelection.startPoint) {
+      return;
+    }
+
+    this.state.multiSelection.endPoint = { x, y };
+    this.updateSelectionRectangle();
+  }
+
+  /**
+   * 结束矩形选择
+   * @param {joint.dia.Event} evt
+   */
+  endRectangleSelection(evt) {
+    if (!this.state.multiSelection.isSelecting) {
+      return;
+    }
+
+    console.log('[MultiSelection] 结束矩形选择');
+
+    // 获取矩形范围内的节点
+    const selectedElements = this.getElementsInRectangle();
+
+    // 移除选择矩形
+    this.removeSelectionRectangle();
+
+    // 重置选择状态
+    this.state.multiSelection.isSelecting = false;
+    this.state.multiSelection.startPoint = null;
+    this.state.multiSelection.endPoint = null;
+
+    // 如果有选中的节点，启用多选模式
+    if (selectedElements.length > 0) {
+      this.enableMultiSelection(selectedElements);
+    }
+  }
+
+  /**
+   * 处理Ctrl+Click选择
+   * @param {joint.shapes.standard.Element} element
+   */
+  handleCtrlClick(element) {
+    console.log('[MultiSelection] Ctrl+Click 节点:', element.id);
+
+    // 如果当前没有多选模式，启用多选并添加当前选中的节点（如果有）
+    if (!this.state.multiSelection.enabled) {
+      const initialElements = [];
+      if (this.state.selectedElement) {
+        initialElements.push(this.state.selectedElement);
+      }
+      this.enableMultiSelection(initialElements);
+    }
+
+    // 检查节点是否已在多选中
+    const index = this.state.multiSelection.selectedElements.findIndex(el => el.id === element.id);
+
+    if (index >= 0) {
+      // 从多选中移除
+      this.removeFromMultiSelection(element);
+    } else {
+      // 添加到多选中
+      this.addToMultiSelection(element);
+    }
+
+    // 清除单选状态
+    this.clearSelection();
+  }
+
+  /**
+   * 启用多选模式
+   * @param {joint.shapes.standard.Element[]} elements
+   */
+  enableMultiSelection(elements) {
+    console.log('[MultiSelection] 启用多选模式，节点数量:', elements.length);
+
+    this.state.multiSelection.enabled = true;
+    this.state.multiSelection.selectedElements = [...elements];
+
+    // 为所有选中的节点添加视觉反馈
+    elements.forEach(element => {
+      this.addMultiSelectionHighlight(element);
+    });
+
+    // 隐藏所有图标
+    this.hideAllNodeIcons();
+  }
+
+  /**
+   * 添加节点到多选
+   * @param {joint.shapes.standard.Element} element
+   */
+  addToMultiSelection(element) {
+    if (!this.state.multiSelection.selectedElements.find(el => el.id === element.id)) {
+      this.state.multiSelection.selectedElements.push(element);
+      this.addMultiSelectionHighlight(element);
+      console.log('[MultiSelection] 添加节点到多选:', element.id);
+    }
+  }
+
+  /**
+   * 从多选中移除节点
+   * @param {joint.shapes.standard.Element} element
+   */
+  removeFromMultiSelection(element) {
+    const index = this.state.multiSelection.selectedElements.findIndex(el => el.id === element.id);
+    if (index >= 0) {
+      this.state.multiSelection.selectedElements.splice(index, 1);
+      this.removeMultiSelectionHighlight(element);
+      console.log('[MultiSelection] 从多选中移除节点:', element.id);
+
+      // 如果多选中没有节点了，退出多选模式
+      if (this.state.multiSelection.selectedElements.length === 0) {
+        this.clearMultiSelection();
+      }
+    }
+  }
+
+  /**
+   * 清除多选
+   */
+  clearMultiSelection() {
+    if (!this.state.multiSelection.enabled) {
+      return;
+    }
+
+    console.log('[MultiSelection] 清除多选');
+
+    // 移除所有高亮
+    this.state.multiSelection.selectedElements.forEach(element => {
+      this.removeMultiSelectionHighlight(element);
+    });
+
+    // 重置多选状态
+    this.state.multiSelection.enabled = false;
+    this.state.multiSelection.selectedElements = [];
+    this.state.multiSelection.isDragging = false;
+    this.state.multiSelection.draggedElement = null;
+    this.state.multiSelection.initialPositions = null;
+    this.state.multiSelection.initialMousePosition = null;
+
+    // 移除选择矩形（如果存在）
+    this.removeSelectionRectangle();
+  }
+
+  // ==================== 多选视觉反馈方法 ====================
+
+  /**
+   * 创建选择矩形
+   * @param {number} x
+   * @param {number} y
+   */
+  createSelectionRectangle(x, y) {
+    // 移除现有的选择矩形
+    this.removeSelectionRectangle();
+
+    // 创建SVG矩形元素
+    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    rect.setAttribute('class', 'selection-rectangle');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', 0);
+    rect.setAttribute('height', 0);
+    rect.setAttribute('fill', 'rgba(25, 118, 210, 0.1)');
+    rect.setAttribute('stroke', '#1976d2');
+    rect.setAttribute('stroke-width', '1');
+    rect.setAttribute('stroke-dasharray', '5,5');
+    rect.setAttribute('pointer-events', 'none');
+
+    // 添加到画布SVG中
+    const svg = this.paper.svg;
+    svg.appendChild(rect);
+
+    this.state.multiSelection.selectionRect = rect;
+  }
+
+  /**
+   * 更新选择矩形
+   */
+  updateSelectionRectangle() {
+    if (!this.state.multiSelection.selectionRect ||
+        !this.state.multiSelection.startPoint ||
+        !this.state.multiSelection.endPoint) {
+      return;
+    }
+
+    const start = this.state.multiSelection.startPoint;
+    const end = this.state.multiSelection.endPoint;
+
+    const x = Math.min(start.x, end.x);
+    const y = Math.min(start.y, end.y);
+    const width = Math.abs(end.x - start.x);
+    const height = Math.abs(end.y - start.y);
+
+    const rect = this.state.multiSelection.selectionRect;
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', width);
+    rect.setAttribute('height', height);
+  }
+
+  /**
+   * 移除选择矩形
+   */
+  removeSelectionRectangle() {
+    if (this.state.multiSelection.selectionRect) {
+      this.state.multiSelection.selectionRect.remove();
+      this.state.multiSelection.selectionRect = null;
+    }
+  }
+
+  /**
+   * 获取矩形范围内的节点
+   * @returns {joint.shapes.standard.Element[]}
+   */
+  getElementsInRectangle() {
+    if (!this.state.multiSelection.startPoint || !this.state.multiSelection.endPoint) {
+      return [];
+    }
+
+    const start = this.state.multiSelection.startPoint;
+    const end = this.state.multiSelection.endPoint;
+
+    const rectBounds = {
+      x: Math.min(start.x, end.x),
+      y: Math.min(start.y, end.y),
+      width: Math.abs(end.x - start.x),
+      height: Math.abs(end.y - start.y)
+    };
+
+    // 只选择节点，不选择连接线
+    const elements = this.graph.getElements();
+    const selectedElements = [];
+
+    elements.forEach(element => {
+      const bbox = element.getBBox();
+
+      // 检查节点是否与矩形相交或完全包含在矩形内
+      if (this.isElementIntersectingRectangle(bbox, rectBounds)) {
+        selectedElements.push(element);
+      }
+    });
+
+    console.log('[MultiSelection] 矩形选择到', selectedElements.length, '个节点');
+    return selectedElements;
+  }
+
+  /**
+   * 检查元素是否与矩形相交
+   * @param {Object} elementBounds
+   * @param {Object} rectBounds
+   * @returns {boolean}
+   */
+  isElementIntersectingRectangle(elementBounds, rectBounds) {
+    return !(elementBounds.x > rectBounds.x + rectBounds.width ||
+             elementBounds.x + elementBounds.width < rectBounds.x ||
+             elementBounds.y > rectBounds.y + rectBounds.height ||
+             elementBounds.y + elementBounds.height < rectBounds.y);
+  }
+
+  /**
+   * 为节点添加多选高亮
+   * @param {joint.shapes.standard.Element} element
+   */
+  addMultiSelectionHighlight(element) {
+    const elementView = this.paper.findViewByModel(element);
+    if (elementView) {
+      // 添加蓝色边框高亮
+      elementView.el.classList.add('multi-selection-highlight');
+    }
+  }
+
+  /**
+   * 移除节点的多选高亮
+   * @param {joint.shapes.standard.Element} element
+   */
+  removeMultiSelectionHighlight(element) {
+    const elementView = this.paper.findViewByModel(element);
+    if (elementView) {
+      elementView.el.classList.remove('multi-selection-highlight');
+    }
+  }
+
+  /**
+   * 隐藏所有节点图标
+   */
+  hideAllNodeIcons() {
+    // 隐藏删除图标
+    if (this.state.nodeDeleteIcon) {
+      this.state.nodeDeleteIcon.style.display = 'none';
+    }
+
+    // 隐藏属性图标
+    if (this.state.nodePropertyIcon) {
+      this.state.nodePropertyIcon.style.display = 'none';
+    }
+  }
+
+  // ==================== 多选拖拽功能方法 ====================
+
+  /**
+   * 开始多选拖拽
+   * @param {joint.shapes.standard.Element} draggedElement
+   * @param {joint.dia.Event} evt
+   */
+  startMultiSelectionDrag(draggedElement, evt) {
+    console.log('[MultiSelection] 开始多选拖拽:', draggedElement.id);
+
+    // 记录拖拽状态
+    this.state.multiSelection.isDragging = true;
+    this.state.multiSelection.draggedElement = draggedElement;
+
+    // 记录所有选中节点的初始位置
+    this.state.multiSelection.initialPositions = new Map();
+    this.state.multiSelection.selectedElements.forEach(element => {
+      const position = element.position();
+      this.state.multiSelection.initialPositions.set(element.id, {
+        x: position.x,
+        y: position.y
+      });
+
+      // 从容器中移除（如果需要）
+      if (!element.isContainer) {
+        const parentContainer = element.getParentCell();
+        if (parentContainer && parentContainer.isContainer) {
+          parentContainer.unembed(element);
+        }
+      }
+    });
+
+    // 记录鼠标初始位置
+    this.state.multiSelection.initialMousePosition = {
+      x: evt.originalEvent.clientX,
+      y: evt.originalEvent.clientY
+    };
+
+    // 监听全局鼠标移动和抬起事件
+    this.eventManager.addEventListener(document, 'mousemove', this.handleMultiSelectionDrag.bind(this));
+    this.eventManager.addEventListener(document, 'mouseup', this.endMultiSelectionDrag.bind(this));
+  }
+
+  /**
+   * 处理多选拖拽移动
+   * @param {MouseEvent} evt
+   */
+  handleMultiSelectionDrag(evt) {
+    if (!this.state.multiSelection.isDragging || !this.state.multiSelection.initialMousePosition) {
+      return;
+    }
+
+    // 计算鼠标移动的偏移量
+    const deltaX = evt.clientX - this.state.multiSelection.initialMousePosition.x;
+    const deltaY = evt.clientY - this.state.multiSelection.initialMousePosition.y;
+
+    // 将屏幕坐标转换为画布坐标
+    const scale = this.paper.scale();
+    const canvasDeltaX = deltaX / scale.sx;
+    const canvasDeltaY = deltaY / scale.sy;
+
+    // 移动所有选中的节点
+    this.state.multiSelection.selectedElements.forEach(element => {
+      const initialPos = this.state.multiSelection.initialPositions.get(element.id);
+      if (initialPos) {
+        const newPosition = {
+          x: initialPos.x + canvasDeltaX,
+          y: initialPos.y + canvasDeltaY
+        };
+        element.position(newPosition.x, newPosition.y);
+      }
+    });
+
+    // 处理容器高亮（基于拖拽的主要元素）
+    if (this.state.multiSelection.draggedElement) {
+      this.handleDragOverContainers(this.state.multiSelection.draggedElement);
+    }
+  }
+
+  /**
+   * 结束多选拖拽
+   * @param {MouseEvent} evt
+   */
+  endMultiSelectionDrag(evt) {
+    if (!this.state.multiSelection.isDragging) {
+      return;
+    }
+
+    console.log('[MultiSelection] 结束多选拖拽');
+
+    // 检查是否有实际移动
+    const hasMoved = this.checkMultiSelectionMovement();
+
+    // 如果有移动，创建移动命令
+    if (hasMoved && this.commandHistory && typeof MultiSelectionMoveCommand !== 'undefined') {
+      this.createMultiSelectionMoveCommand();
+    }
+
+    // 处理容器嵌套（只对可嵌套的节点）
+    this.handleMultiSelectionContainerEmbedding();
+
+    // 清除拖拽状态
+    this.state.multiSelection.isDragging = false;
+    this.state.multiSelection.draggedElement = null;
+    this.state.multiSelection.initialPositions = null;
+    this.state.multiSelection.initialMousePosition = null;
+
+    // 清除容器高亮
+    this.clearContainerHighlight();
+
+    // 移除全局事件监听器
+    this.eventManager.removeEventListener(document, 'mousemove', this.handleMultiSelectionDrag.bind(this));
+    this.eventManager.removeEventListener(document, 'mouseup', this.endMultiSelectionDrag.bind(this));
+  }
+
+  /**
+   * 处理多选节点的容器嵌套
+   */
+  handleMultiSelectionContainerEmbedding() {
+    const embeddableElements = this.state.multiSelection.selectedElements.filter(element => {
+      // 只有非容器、非开始/结束节点可以被嵌套
+      return !element.isContainer && !this.isStartOrEndNode(element);
+    });
+
+    console.log(`[MultiSelection] 处理 ${embeddableElements.length} 个可嵌套节点的容器嵌套`);
+
+    embeddableElements.forEach(element => {
+      setTimeout(() => {
+        this.handleContainerEmbedding(element);
+      }, 10);
+    });
+  }
+
+  /**
+   * 检查多选节点是否有实际移动
+   * @returns {boolean}
+   */
+  checkMultiSelectionMovement() {
+    if (!this.state.multiSelection.initialPositions) {
+      return false;
+    }
+
+    const threshold = 5; // 移动阈值，小于此值认为没有移动
+
+    for (const element of this.state.multiSelection.selectedElements) {
+      const initialPos = this.state.multiSelection.initialPositions.get(element.id);
+      const currentPos = element.position();
+
+      if (initialPos) {
+        const deltaX = Math.abs(currentPos.x - initialPos.x);
+        const deltaY = Math.abs(currentPos.y - initialPos.y);
+
+        if (deltaX > threshold || deltaY > threshold) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 创建多选移动命令
+   */
+  createMultiSelectionMoveCommand() {
+    if (!this.state.multiSelection.initialPositions) {
+      return;
+    }
+
+    const oldPositions = [];
+    const newPositions = [];
+
+    this.state.multiSelection.selectedElements.forEach(element => {
+      const initialPos = this.state.multiSelection.initialPositions.get(element.id);
+      const currentPos = element.position();
+
+      if (initialPos) {
+        oldPositions.push(initialPos);
+        newPositions.push(currentPos);
+      }
+    });
+
+    if (oldPositions.length > 0) {
+      const moveCommand = new MultiSelectionMoveCommand(
+        this,
+        this.state.multiSelection.selectedElements,
+        oldPositions,
+        newPositions
+      );
+
+      // 不执行命令，因为移动已经完成，只需要记录到历史中
+      this.commandHistory.undoStack.push(moveCommand);
+      this.commandHistory.redoStack = []; // 清空重做栈
+
+      // 限制历史记录大小
+      if (this.commandHistory.undoStack.length > this.commandHistory.maxSize) {
+        this.commandHistory.undoStack.shift();
+      }
+
+      console.log(`[MultiSelection] 多选移动命令已记录到历史`);
     }
   }
 

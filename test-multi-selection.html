@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>多选功能测试</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+        
+        .test-container {
+            width: 100%;
+            height: 600px;
+            border: 1px solid #ccc;
+            position: relative;
+        }
+        
+        .instructions {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 5px;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        
+        .instructions ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 5px 0;
+        }
+        
+        .test-info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #e8f4fd;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="instructions">
+        <h3>多选功能测试说明</h3>
+        <p>请按照以下步骤测试多选功能：</p>
+        <ul>
+            <li><strong>矩形选择：</strong>在空白区域按住左键拖拽，绘制选择矩形</li>
+            <li><strong>Ctrl+点击：</strong>按住Ctrl键点击节点进行多选</li>
+            <li><strong>群组移动：</strong>拖拽任意选中的节点，所有选中节点一起移动</li>
+            <li><strong>批量删除：</strong>选中多个节点后按Delete键批量删除</li>
+            <li><strong>复制粘贴：</strong>选中多个节点后按Ctrl+C复制，Ctrl+V粘贴</li>
+            <li><strong>全选：</strong>按Ctrl+A选择所有节点</li>
+            <li><strong>取消选择：</strong>点击空白区域或按Escape键取消选择</li>
+        </ul>
+    </div>
+    
+    <div class="test-container" id="paper-container"></div>
+    
+    <div class="test-info">
+        <p><strong>预期行为：</strong></p>
+        <ul>
+            <li>多选的节点应该有蓝色边框高亮</li>
+            <li>多选模式下不显示属性和删除图标</li>
+            <li>选择矩形应该有虚线边框和半透明填充</li>
+            <li>群组移动时所有节点保持相对位置</li>
+            <li>支持撤销/重做操作</li>
+        </ul>
+    </div>
+
+    <!-- 引入必要的库 -->
+    <script src="lib/jquery.min.js"></script>
+    <script src="lib/lodash.min.js"></script>
+    <script src="lib/backbone.min.js"></script>
+    <script src="lib/jointjs/joint.min.js"></script>
+    
+    <!-- 引入应用文件 -->
+    <script src="js/config.js"></script>
+    <script src="js/utils/error-handler.js"></script>
+    <script src="js/utils/event-manager.js"></script>
+    <script src="js/features/command-history.js"></script>
+    <script src="js/features/commands/node-commands.js"></script>
+    <script src="js/features/commands/property-commands.js"></script>
+    <script src="js/features/clipboard-manager.js"></script>
+    <script src="js/features/node-manager.js"></script>
+    <script src="js/core/graph.js"></script>
+    
+    <script>
+        // 简化的测试应用
+        class TestApp {
+            constructor() {
+                this.initGraph();
+                this.createTestNodes();
+            }
+            
+            initGraph() {
+                // 创建图形和画布
+                this.graph = new joint.dia.Graph();
+                this.paper = new joint.dia.Paper({
+                    el: document.getElementById('paper-container'),
+                    model: this.graph,
+                    width: '100%',
+                    height: 600,
+                    gridSize: 10,
+                    drawGrid: true,
+                    background: {
+                        color: 'rgba(0, 255, 0, 0.3)'
+                    }
+                });
+                
+                // 初始化核心组件
+                this.eventManager = new EventManager();
+                this.commandHistory = new CommandHistory(this);
+                this.clipboardManager = new ClipboardManager(this);
+                
+                // 初始化状态
+                this.state = {
+                    selectedElement: null,
+                    hoveredElement: null,
+                    selectedLink: null,
+                    currentEditingNode: null,
+                    multiSelection: {
+                        enabled: false,
+                        selectedElements: [],
+                        isSelecting: false,
+                        selectionRect: null,
+                        startPoint: null,
+                        endPoint: null,
+                        isDragging: false,
+                        draggedElement: null,
+                        initialPositions: null,
+                        initialMousePosition: null
+                    }
+                };
+                
+                this.components = {};
+                
+                // 初始化图形应用（使用简化版本）
+                this.initWorkflowApp();
+            }
+            
+            initWorkflowApp() {
+                // 创建一个简化的WorkflowApp实例用于测试
+                const workflowApp = new WorkflowApp(this.paper.el, {
+                    skipFullInit: true
+                });
+                
+                // 复制必要的方法和属性
+                Object.assign(this, workflowApp);
+            }
+            
+            createTestNodes() {
+                // 创建一些测试节点
+                const nodes = [
+                    { x: 100, y: 100, text: '节点1' },
+                    { x: 300, y: 150, text: '节点2' },
+                    { x: 500, y: 200, text: '节点3' },
+                    { x: 200, y: 300, text: '节点4' },
+                    { x: 400, y: 350, text: '节点5' }
+                ];
+                
+                nodes.forEach(nodeData => {
+                    const node = new joint.shapes.standard.Rectangle({
+                        position: { x: nodeData.x, y: nodeData.y },
+                        size: { width: 80, height: 40 },
+                        attrs: {
+                            body: {
+                                fill: '#ffffff',
+                                stroke: '#333333',
+                                strokeWidth: 2,
+                                rx: 5,
+                                ry: 5
+                            },
+                            label: {
+                                text: nodeData.text,
+                                fontSize: 12,
+                                fontFamily: 'Arial',
+                                fill: '#333333'
+                            }
+                        }
+                    });
+                    
+                    this.graph.addCell(node);
+                });
+            }
+        }
+        
+        // 启动测试应用
+        document.addEventListener('DOMContentLoaded', () => {
+            try {
+                const testApp = new TestApp();
+                console.log('多选功能测试应用已启动');
+            } catch (error) {
+                console.error('测试应用启动失败:', error);
+            }
+        });
+    </script>
+</body>
+</html>

@@ -324,6 +324,56 @@ class BatchCommand extends BaseCommand {
   }
 }
 
+/**
+ * 多选移动命令
+ */
+class MultiSelectionMoveCommand extends BaseCommand {
+  constructor(app, elements, oldPositions, newPositions) {
+    super(app, `移动 ${elements.length} 个节点`);
+    this.elementIds = elements.map(el => el.id);
+    this.oldPositions = new Map();
+    this.newPositions = new Map();
+
+    // 存储位置信息
+    elements.forEach((element, index) => {
+      this.oldPositions.set(element.id, { ...oldPositions[index] });
+      this.newPositions.set(element.id, { ...newPositions[index] });
+    });
+  }
+
+  execute() {
+    try {
+      this.elementIds.forEach(elementId => {
+        const element = this.app.graph.getCell(elementId);
+        const newPos = this.newPositions.get(elementId);
+        if (element && newPos) {
+          element.position(newPos.x, newPos.y);
+        }
+      });
+      console.log(`[MultiSelectionMoveCommand] ${this.elementIds.length} 个节点已移动`);
+    } catch (error) {
+      console.error('[MultiSelectionMoveCommand] 执行失败:', error);
+      throw error;
+    }
+  }
+
+  undo() {
+    try {
+      this.elementIds.forEach(elementId => {
+        const element = this.app.graph.getCell(elementId);
+        const oldPos = this.oldPositions.get(elementId);
+        if (element && oldPos) {
+          element.position(oldPos.x, oldPos.y);
+        }
+      });
+      console.log(`[MultiSelectionMoveCommand] ${this.elementIds.length} 个节点位置已恢复`);
+    } catch (error) {
+      console.error('[MultiSelectionMoveCommand] 撤销失败:', error);
+      throw error;
+    }
+  }
+}
+
 // 导出类到全局作用域
 if (typeof window !== 'undefined') {
   window.PropertyChangeCommand = PropertyChangeCommand;
@@ -332,6 +382,7 @@ if (typeof window !== 'undefined') {
   window.CreateLinkCommand = CreateLinkCommand;
   window.DeleteLinkCommand = DeleteLinkCommand;
   window.BatchCommand = BatchCommand;
+  window.MultiSelectionMoveCommand = MultiSelectionMoveCommand;
 } else if (typeof global !== 'undefined') {
   global.PropertyChangeCommand = PropertyChangeCommand;
   global.EmbedNodeCommand = EmbedNodeCommand;
@@ -339,4 +390,5 @@ if (typeof window !== 'undefined') {
   global.CreateLinkCommand = CreateLinkCommand;
   global.DeleteLinkCommand = DeleteLinkCommand;
   global.BatchCommand = BatchCommand;
+  global.MultiSelectionMoveCommand = MultiSelectionMoveCommand;
 }

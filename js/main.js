@@ -229,6 +229,7 @@ function executeShortcutAction(action) {
         break;
       case 'clearSelection':
         workflowApp.clearSelection();
+        workflowApp.clearMultiSelection();
         break;
       case 'zoomIn':
         zoomCanvas(0.1);
@@ -284,8 +285,19 @@ function saveWorkflow() {
 function selectAllElements() {
   try {
     const elements = workflowApp.graph.getElements();
-    console.log(`选择了 ${elements.length} 个元素`);
-    // TODO: 实现多选功能
+
+    if (elements.length === 0) {
+      console.log('画布上没有节点可选择');
+      return;
+    }
+
+    // 清除现有选择
+    workflowApp.clearSelection();
+
+    // 启用多选模式选择所有节点
+    workflowApp.enableMultiSelection(elements);
+
+    console.log(`[MultiSelection] 全选了 ${elements.length} 个节点`);
   } catch (error) {
     ErrorHandler.handle(error, '全选元素');
   }
@@ -296,6 +308,13 @@ function selectAllElements() {
  */
 function deleteSelectedElements() {
   try {
+    // 优先处理多选删除
+    if (workflowApp.state.multiSelection.enabled &&
+        workflowApp.state.multiSelection.selectedElements.length > 0) {
+      deleteMultiSelectedElements();
+      return;
+    }
+
     // 删除选中的连接线
     if (workflowApp.state.selectedLink) {
       workflowApp.state.selectedLink.remove();
@@ -303,8 +322,15 @@ function deleteSelectedElements() {
       console.log('删除选中的连接线');
     }
 
-    // 删除悬停的元素
-    if (workflowApp.state.hoveredElement && !workflowApp.state.hoveredElement.isLink()) {
+    // 删除选中的单个节点
+    if (workflowApp.state.selectedElement && !workflowApp.state.selectedElement.isLink()) {
+      const nodeManager = new NodeManager(workflowApp);
+      nodeManager.deleteNode(workflowApp.state.selectedElement);
+      workflowApp.state.selectedElement = null;
+      console.log('删除选中的节点');
+    }
+    // 删除悬停的元素（作为备选）
+    else if (workflowApp.state.hoveredElement && !workflowApp.state.hoveredElement.isLink()) {
       const nodeManager = new NodeManager(workflowApp);
       nodeManager.deleteNode(workflowApp.state.hoveredElement);
       workflowApp.state.hoveredElement = null;
@@ -313,6 +339,53 @@ function deleteSelectedElements() {
 
   } catch (error) {
     ErrorHandler.handle(error, '删除选中元素');
+  }
+}
+
+/**
+ * 删除多选的元素
+ */
+function deleteMultiSelectedElements() {
+  try {
+    const elementsToDelete = [...workflowApp.state.multiSelection.selectedElements];
+    console.log(`[MultiSelection] 批量删除 ${elementsToDelete.length} 个节点`);
+
+    // 创建批量删除命令
+    const nodeManager = new NodeManager(workflowApp);
+    const commands = [];
+
+    elementsToDelete.forEach(element => {
+      if (typeof DeleteNodeCommand !== 'undefined') {
+        const deleteCommand = new DeleteNodeCommand(workflowApp, element);
+        commands.push(deleteCommand);
+      }
+    });
+
+    // 执行批量命令
+    if (commands.length > 0 &&
+        workflowApp.commandHistory &&
+        typeof BatchCommand !== 'undefined') {
+      const batchCommand = new BatchCommand(workflowApp, commands, `删除 ${commands.length} 个节点`);
+      workflowApp.commandHistory.executeCommand(batchCommand);
+    } else {
+      // 如果命令系统不可用，直接删除
+      elementsToDelete.forEach(element => {
+        try {
+          nodeManager.deleteNodeDirect(element);
+        } catch (error) {
+          console.error('删除节点失败:', element.id, error);
+        }
+      });
+    }
+
+    // 清除多选状态
+    workflowApp.clearMultiSelection();
+
+    console.log(`[MultiSelection] 批量删除完成`);
+
+  } catch (error) {
+    console.error('[MultiSelection] 批量删除失败:', error);
+    ErrorHandler.handle(error, '批量删除节点');
   }
 }
 
