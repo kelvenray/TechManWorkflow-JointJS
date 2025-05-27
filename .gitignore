@@ -1,1 +1,13 @@
+<<<<<<< HEAD
 node_modules
+=======
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Local History for Visual Studio Code
+.history/
+>>>>>>> dacbc160ab845c19cfd8002aef31015bf862e73e
